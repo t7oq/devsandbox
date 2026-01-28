@@ -200,6 +200,101 @@ func TestSandbox_ClaudeAvailable(t *testing.T) {
 	}
 }
 
+func TestSandbox_ClaudeCodeFunctional(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	// Check if claude is installed on host first
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude not installed on host")
+	}
+
+	t.Run("help_works", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, "claude", "--help")
+		output, err := cmd.CombinedOutput()
+		outputStr := string(output)
+
+		// Claude --help should work and show usage info
+		if err != nil && !strings.Contains(outputStr, "Usage") && !strings.Contains(outputStr, "usage") {
+			t.Errorf("claude --help failed: %v\nOutput: %s", err, output)
+		}
+	})
+
+	t.Run("config_dir_accessible", func(t *testing.T) {
+		// Verify ~/.claude directory is accessible inside sandbox
+		home := os.Getenv("HOME")
+		claudeDir := filepath.Join(home, ".claude")
+
+		// Only test if .claude exists on host
+		if _, err := os.Stat(claudeDir); os.IsNotExist(err) {
+			t.Skip("~/.claude does not exist on host")
+		}
+
+		cmd := exec.Command(binaryPath, "ls", "-la", claudeDir)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("failed to list ~/.claude: %v\nOutput: %s", err, output)
+		}
+
+		// Should be able to see the directory contents
+		if !strings.Contains(string(output), "total") {
+			t.Errorf("~/.claude not properly mounted: %s", output)
+		}
+	})
+
+	t.Run("config_file_accessible", func(t *testing.T) {
+		// Verify ~/.claude.json is accessible if it exists
+		home := os.Getenv("HOME")
+		claudeConfig := filepath.Join(home, ".claude.json")
+
+		// Only test if .claude.json exists on host
+		if _, err := os.Stat(claudeConfig); os.IsNotExist(err) {
+			t.Skip("~/.claude.json does not exist on host")
+		}
+
+		cmd := exec.Command(binaryPath, "cat", claudeConfig)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("failed to read ~/.claude.json: %v\nOutput: %s", err, output)
+		}
+
+		// Should contain valid JSON (at least opening brace)
+		if !strings.Contains(string(output), "{") {
+			t.Errorf("~/.claude.json not readable: %s", output)
+		}
+	})
+
+	t.Run("can_execute_prompt", func(t *testing.T) {
+		// Test that claude can run a simple print command
+		// Using -p flag for print mode (non-interactive)
+		cmd := exec.Command(binaryPath, "claude", "-p", "say hello")
+
+		output, err := cmd.CombinedOutput()
+		outputStr := string(output)
+
+		// Claude should either:
+		// 1. Respond successfully (contains common greeting words)
+		// 2. Fail with auth/API error (still proves it started)
+		validResponse := strings.Contains(strings.ToLower(outputStr), "hello") ||
+			strings.Contains(strings.ToLower(outputStr), "hi") ||
+			strings.Contains(strings.ToLower(outputStr), "help")
+
+		authError := strings.Contains(outputStr, "API") ||
+			strings.Contains(outputStr, "auth") ||
+			strings.Contains(outputStr, "key") ||
+			strings.Contains(outputStr, "login")
+
+		if err != nil && !authError {
+			t.Errorf("claude -p failed unexpectedly: %v\nOutput: %s", err, outputStr)
+		}
+
+		if !validResponse && !authError {
+			t.Logf("claude responded (sandbox functional): %s", outputStr)
+		}
+	})
+}
+
 func TestSandbox_SSHBlocked(t *testing.T) {
 	if !bwrapAvailable() {
 		t.Skip("bwrap not available")

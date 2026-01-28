@@ -315,6 +315,7 @@ func (b *Builder) AddAIToolBindings() *Builder {
 		filepath.Join(home, ".claude"),
 		filepath.Join(home, ".config", "Claude"),
 		filepath.Join(home, ".cache", "claude-cli-nodejs"),
+		filepath.Join(home, ".local", "share", "claude"), // Claude Code installation
 	}
 	for _, d := range claudeDirs {
 		b.BindIfExists(d, d)
