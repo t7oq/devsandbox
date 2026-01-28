@@ -31,7 +31,15 @@ tasks:
 
   test:
     cmds:
-      - go test ./...
+      - go test ./internal/...
+
+  test:e2e:
+    cmds:
+      - go test -v ./e2e/...
+
+  test:all:
+    cmds:
+      - go test -v ./...
 
   build:
     cmds:
