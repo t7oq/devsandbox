@@ -10,6 +10,12 @@ import (
 	"devsandbox/internal/sandbox"
 )
 
+// Set via ldflags at build time
+var (
+	version = "dev"
+	date    = "unknown"
+)
+
 const appVersion = "1.0.0"
 
 func main() {
@@ -42,7 +48,7 @@ Security Model:
 
 	rootCmd.Flags().Bool("info", false, "Show sandbox configuration")
 
-	rootCmd.SetVersionTemplate(fmt.Sprintf("devsandbox v%s\n", appVersion))
+	rootCmd.SetVersionTemplate(fmt.Sprintf("devsandbox v%s (commit: %s, built: %s)\n", appVersion, version, date))
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

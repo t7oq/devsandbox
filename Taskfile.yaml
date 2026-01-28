@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   GIT_COMMIT:
-    sh: git rev-list HEAD
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "dev"
   BUILD_DATE:
     sh: date --iso-8601=seconds
 
