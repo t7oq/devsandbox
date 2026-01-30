@@ -20,7 +20,6 @@ Linters: golangci + go default linters.
 
 ## TODOs
 
-- allow using different shells (bash, zsh). fish is currently hardcoded
 - add telemetry sending via otel
 - capture more audit data (e.g. files access, attempts to access restricted files, attempts to access network etc)
 - subcommand to prune sandboxes

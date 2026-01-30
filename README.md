@@ -30,24 +30,24 @@ AI coding assistants like Claude Code, GitHub Copilot, and others can execute ar
 - Linux (kernel 3.8+ with user namespaces)
 - [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`)
 - [mise](https://mise.jdx.dev/) (for tool management)
-- [fish shell](https://fishshell.com/) (default shell inside sandbox)
 - [passt](https://passt.top/) (only for proxy mode)
+- Supported shells: bash, zsh, fish (auto-detected from `$SHELL`)
 
 ### Installation
 
 **Arch Linux:**
 ```bash
-sudo pacman -S bubblewrap passt fish
+sudo pacman -S bubblewrap passt
 ```
 
 **Debian/Ubuntu:**
 ```bash
-sudo apt install bubblewrap passt fish
+sudo apt install bubblewrap passt
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install bubblewrap passt fish
+sudo dnf install bubblewrap passt
 ```
 
 ## Building

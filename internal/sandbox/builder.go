@@ -237,11 +237,8 @@ func (b *Builder) AddToolBindings() *Builder {
 		b.ROBindIfExists(d, d)
 	}
 
-	b.ROBindIfExists(filepath.Join(home, ".config", "fish"), filepath.Join(home, ".config", "fish"))
-	b.ROBindIfExists(
-		filepath.Join(home, ".local", "share", "fish", "vendor_completions.d"),
-		filepath.Join(home, ".local", "share", "fish", "vendor_completions.d"),
-	)
+	// Shell-specific config bindings
+	b.AddShellConfigBindings()
 
 	nvimDirs := []struct {
 		path string
@@ -363,13 +360,41 @@ func (b *Builder) AddAIToolBindings() *Builder {
 	return b
 }
 
+func (b *Builder) AddShellConfigBindings() *Builder {
+	home := b.cfg.HomeDir
+
+	switch b.cfg.Shell {
+	case ShellFish:
+		b.ROBindIfExists(filepath.Join(home, ".config", "fish"), filepath.Join(home, ".config", "fish"))
+		b.ROBindIfExists(
+			filepath.Join(home, ".local", "share", "fish", "vendor_completions.d"),
+			filepath.Join(home, ".local", "share", "fish", "vendor_completions.d"),
+		)
+	case ShellZsh:
+		b.ROBindIfExists(filepath.Join(home, ".zshrc"), filepath.Join(home, ".zshrc"))
+		b.ROBindIfExists(filepath.Join(home, ".zshenv"), filepath.Join(home, ".zshenv"))
+		b.ROBindIfExists(filepath.Join(home, ".zprofile"), filepath.Join(home, ".zprofile"))
+		b.ROBindIfExists(filepath.Join(home, ".config", "zsh"), filepath.Join(home, ".config", "zsh"))
+		// Oh-my-zsh and other zsh frameworks
+		b.ROBindIfExists(filepath.Join(home, ".oh-my-zsh"), filepath.Join(home, ".oh-my-zsh"))
+		b.ROBindIfExists(filepath.Join(home, ".local", "share", "zsh"), filepath.Join(home, ".local", "share", "zsh"))
+	case ShellBash:
+		b.ROBindIfExists(filepath.Join(home, ".bashrc"), filepath.Join(home, ".bashrc"))
+		b.ROBindIfExists(filepath.Join(home, ".bash_profile"), filepath.Join(home, ".bash_profile"))
+		b.ROBindIfExists(filepath.Join(home, ".profile"), filepath.Join(home, ".profile"))
+		b.ROBindIfExists(filepath.Join(home, ".config", "bash"), filepath.Join(home, ".config", "bash"))
+	}
+
+	return b
+}
+
 func (b *Builder) AddEnvironment() *Builder {
 	home := b.cfg.HomeDir
 
 	b.SetEnv("HOME", home)
 	b.SetEnv("USER", os.Getenv("USER"))
 	b.SetEnv("LOGNAME", os.Getenv("LOGNAME"))
-	b.SetEnv("SHELL", "/usr/bin/fish")
+	b.SetEnv("SHELL", b.cfg.ShellPath)
 	b.SetEnv("TERM", os.Getenv("TERM"))
 	b.SetEnv("LANG", os.Getenv("LANG"))
 
@@ -397,7 +422,7 @@ func (b *Builder) AddEnvironment() *Builder {
 	b.SetEnvIfSet("COLUMNS")
 	b.SetEnvIfSet("LINES")
 
-	b.SetEnv("MISE_SHELL", "fish")
+	b.SetEnv("MISE_SHELL", string(b.cfg.Shell))
 
 	b.SetEnv("SANDBOX", "1")
 	b.SetEnv("SANDBOX_PROJECT", b.cfg.ProjectName)

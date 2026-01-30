@@ -4,11 +4,21 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 const (
 	// SandboxBaseDir is the directory under ~/.local/share for sandbox data
 	SandboxBaseDir = "devsandbox"
+)
+
+// Shell represents a supported shell type
+type Shell string
+
+const (
+	ShellFish Shell = "fish"
+	ShellBash Shell = "bash"
+	ShellZsh  Shell = "zsh"
 )
 
 type Config struct {
@@ -18,6 +28,8 @@ type Config struct {
 	SandboxRoot string // ~/.local/share/devsandbox/<project>
 	SandboxHome string // ~/.local/share/devsandbox/<project>/home (mounted at $HOME)
 	XDGRuntime  string
+	Shell       Shell  // Detected shell (fish, bash, zsh)
+	ShellPath   string // Full path to shell binary
 
 	// Proxy settings
 	ProxyEnabled bool
@@ -50,6 +62,8 @@ func NewConfig() (*Config, error) {
 		xdgRuntime = filepath.Join("/run/user", string(rune(os.Getuid())))
 	}
 
+	shell, shellPath := detectShell()
+
 	return &Config{
 		HomeDir:     homeDir,
 		ProjectDir:  projectDir,
@@ -57,7 +71,32 @@ func NewConfig() (*Config, error) {
 		SandboxRoot: sandboxRoot,
 		SandboxHome: sandboxHome,
 		XDGRuntime:  xdgRuntime,
+		Shell:       shell,
+		ShellPath:   shellPath,
 	}, nil
+}
+
+// detectShell detects the current shell from SHELL environment variable
+func detectShell() (Shell, string) {
+	shellEnv := os.Getenv("SHELL")
+	if shellEnv == "" {
+		shellEnv = "/bin/bash" // Default fallback
+	}
+
+	shellName := filepath.Base(shellEnv)
+
+	switch {
+	case strings.Contains(shellName, "fish"):
+		return ShellFish, shellEnv
+	case strings.Contains(shellName, "zsh"):
+		return ShellZsh, shellEnv
+	default:
+		// Default to bash for unknown shells
+		if shellEnv == "" || !strings.Contains(shellName, "bash") {
+			return ShellBash, "/bin/bash"
+		}
+		return ShellBash, shellEnv
+	}
 }
 
 var nonAlphanumericRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
