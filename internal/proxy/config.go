@@ -6,10 +6,12 @@ import (
 )
 
 const (
-	DefaultProxyPort = 8080
+	DefaultProxyPort = 18080 // Use non-standard port to avoid conflicts with dev servers
+	MaxPortRetries   = 50    // Number of ports to try if default is busy
 	CADirName        = ".ca"
 	CACertFile       = "ca.crt"
 	CAKeyFile        = "ca.key"
+	LogDirName       = "proxy-logs"
 )
 
 type Config struct {
@@ -19,6 +21,7 @@ type Config struct {
 	CADir      string
 	CACertPath string
 	CAKeyPath  string
+	LogDir     string
 }
 
 func NewConfig(sandboxBase string, port int, logEnabled bool) *Config {
@@ -30,6 +33,7 @@ func NewConfig(sandboxBase string, port int, logEnabled bool) *Config {
 		CADir:      caDir,
 		CACertPath: filepath.Join(caDir, CACertFile),
 		CAKeyPath:  filepath.Join(caDir, CAKeyFile),
+		LogDir:     filepath.Join(sandboxBase, LogDirName),
 	}
 }
 

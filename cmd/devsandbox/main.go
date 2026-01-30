@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -40,7 +41,7 @@ Security Model:
 Proxy Mode (--proxy):
   - All HTTP/HTTPS traffic routed through local proxy
   - MITM proxy with auto-generated CA certificate
-  - Network isolated via pasta/slirp4netns`,
+  - Network isolated via pasta (requires passt package)`,
 		Example: `  devsandbox                      # Interactive shell
   devsandbox npm install          # Install packages
   devsandbox --proxy npm install  # With proxy (traffic inspection)
@@ -103,14 +104,17 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	var netProvider network.Provider
 
 	if cfg.ProxyEnabled {
-		// Check for network provider
+		// Proxy mode requires pasta for network isolation and traffic enforcement.
+		// Without pasta, applications could bypass the proxy entirely.
 		netProvider, err = network.SelectProvider()
 		if err != nil {
-			return fmt.Errorf("proxy mode requires pasta or slirp4netns: %w", err)
+			return fmt.Errorf("proxy mode requires pasta: %w\nInstall with: sudo pacman -S passt (Arch) or apt install passt (Debian/Ubuntu)", err)
 		}
 
+		cfg.NetworkIsolated = netProvider.NetworkIsolated()
+
 		// Set up proxy
-		proxyCfg := proxy.NewConfig(cfg.SandboxBase(), proxyPort, proxyLog)
+		proxyCfg := proxy.NewConfig(cfg.SandboxRoot, proxyPort, proxyLog)
 		proxyServer, err = proxy.NewServer(proxyCfg)
 		if err != nil {
 			return fmt.Errorf("failed to create proxy server: %w", err)
@@ -121,27 +125,46 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to start proxy server: %w", err)
 		}
 
-		// Set up cleanup on signals
+		// Set up cleanup with proper synchronization
+		var cleanupOnce sync.Once
+		cleanup := func() {
+			cleanupOnce.Do(func() {
+				_ = proxyServer.Stop()
+			})
+		}
+
+		// Handle signals for graceful shutdown
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		go func() {
 			<-sigChan
-			proxyServer.Stop()
-			if netProvider != nil {
-				netProvider.Stop()
-			}
+			cleanup()
 			os.Exit(0)
 		}()
 
+		// Ensure cleanup on normal exit too
+		defer cleanup()
+
+		// Get actual port (may differ from requested if port was busy)
+		actualPort := proxyServer.Port()
+		cfg.ProxyPort = actualPort
+
+		// Set gateway IP - pasta maps 10.0.2.2 to host's 127.0.0.1
 		cfg.GatewayIP = netProvider.GatewayIP()
 		cfg.ProxyCAPath = proxyCfg.CACertPath
 
-		fmt.Fprintf(os.Stderr, "Proxy server started on :%d (provider: %s)\n", proxyPort, netProvider.Name())
+		fmt.Fprintf(os.Stderr, "Proxy server started on 127.0.0.1:%d (provider: %s, gateway: %s)\n", actualPort, netProvider.Name(), cfg.GatewayIP)
+		if actualPort != proxyPort {
+			fmt.Fprintf(os.Stderr, "Note: Using port %d (requested port %d was busy)\n", actualPort, proxyPort)
+		}
 		fmt.Fprintf(os.Stderr, "CA certificate: %s\n", proxyCfg.CACertPath)
 	}
 
 	builder := sandbox.NewBuilder(cfg)
-	builder.AddBaseArgs()
+
+	// Build sandbox arguments
+	// Note: Order matters - tmpfs for /tmp must be created before mounting CA cert to /tmp
+	builder.AddBaseArgs() // Creates /tmp as tmpfs
 	builder.AddSystemBindings()
 	builder.AddNetworkBindings()
 	builder.AddLocaleBindings()
@@ -151,7 +174,7 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	builder.AddGitConfig()
 	builder.AddProjectBindings()
 	builder.AddAIToolBindings()
-	builder.AddProxyCACertificate()
+	builder.AddProxyCACertificate() // Must come after AddBaseArgs (needs /tmp tmpfs)
 	builder.AddEnvironment()
 
 	bwrapArgs := builder.Build()
@@ -168,13 +191,15 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "===================")
 	}
 
-	// Note: In proxy mode, we would need to launch the sandbox in a network namespace
-	// and then start pasta/slirp4netns to connect it. This requires bwrap --unshare-net
-	// followed by pasta --netns /proc/$PID/ns/net, which is complex to orchestrate.
-	//
-	// For now, proxy mode sets up the proxy server and environment variables.
-	// Full network namespace isolation would require additional orchestration.
+	// Execute the sandbox
+	if cfg.ProxyEnabled {
+		// Use pasta to create isolated network namespace
+		// pasta wraps bwrap and provides network connectivity via gateway IP
+		// All traffic must go through pasta's virtual interface -> our proxy
+		return bwrap.ExecWithPasta(bwrapArgs, shellCmd)
+	}
 
+	// Non-proxy mode: use syscall.Exec (replaces current process)
 	return bwrap.Exec(bwrapArgs, shellCmd)
 }
 

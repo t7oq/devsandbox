@@ -7,14 +7,16 @@ import (
 )
 
 const (
-	SandboxBase = ".sandboxes"
+	// SandboxBaseDir is the directory under ~/.local/share for sandbox data
+	SandboxBaseDir = "devsandbox"
 )
 
 type Config struct {
 	HomeDir     string
 	ProjectDir  string
 	ProjectName string
-	SandboxHome string
+	SandboxRoot string // ~/.local/share/devsandbox/<project>
+	SandboxHome string // ~/.local/share/devsandbox/<project>/home (mounted at $HOME)
 	XDGRuntime  string
 
 	// Proxy settings
@@ -23,6 +25,8 @@ type Config struct {
 	ProxyLog     bool
 	ProxyCAPath  string
 	GatewayIP    string
+	// True if network namespace is isolated (pasta)
+	NetworkIsolated bool
 }
 
 func NewConfig() (*Config, error) {
@@ -37,7 +41,9 @@ func NewConfig() (*Config, error) {
 	}
 
 	projectName := SanitizeProjectName(filepath.Base(projectDir))
-	sandboxHome := filepath.Join(homeDir, SandboxBase, projectName)
+	// Use XDG-compliant path: ~/.local/share/devsandbox/<project>
+	sandboxRoot := filepath.Join(homeDir, ".local", "share", SandboxBaseDir, projectName)
+	sandboxHome := filepath.Join(sandboxRoot, "home")
 
 	xdgRuntime := os.Getenv("XDG_RUNTIME_DIR")
 	if xdgRuntime == "" {
@@ -48,6 +54,7 @@ func NewConfig() (*Config, error) {
 		HomeDir:     homeDir,
 		ProjectDir:  projectDir,
 		ProjectName: projectName,
+		SandboxRoot: sandboxRoot,
 		SandboxHome: sandboxHome,
 		XDGRuntime:  xdgRuntime,
 	}, nil
@@ -64,8 +71,11 @@ func (c *Config) EnsureSandboxDirs() error {
 		c.SandboxHome,
 		filepath.Join(c.SandboxHome, ".config"),
 		filepath.Join(c.SandboxHome, ".cache"),
+		filepath.Join(c.SandboxHome, ".cache", "go-build"), // Go build cache (isolated)
+		filepath.Join(c.SandboxHome, ".cache", "go-mod"),   // Go module cache (isolated)
 		filepath.Join(c.SandboxHome, ".local", "share"),
 		filepath.Join(c.SandboxHome, ".local", "state"),
+		filepath.Join(c.SandboxHome, "go"), // GOPATH (isolated)
 	}
 
 	for _, dir := range dirs {
@@ -78,5 +88,5 @@ func (c *Config) EnsureSandboxDirs() error {
 }
 
 func (c *Config) SandboxBase() string {
-	return filepath.Join(c.HomeDir, SandboxBase)
+	return filepath.Join(c.HomeDir, ".local", "share", SandboxBaseDir)
 }

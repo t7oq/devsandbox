@@ -2,9 +2,11 @@ package network
 
 import "errors"
 
-var ErrNoNetworkProvider = errors.New("no network provider available (need pasta or slirp4netns)")
+var ErrNoPastaProvider = errors.New("pasta not available (install passt package for proxy mode)")
 
-// Provider defines the interface for user-mode network providers
+// Provider defines the interface for user-mode network providers.
+// This interface is intentionally minimal - it only includes methods
+// that are actually used in the proxy flow.
 type Provider interface {
 	// Name returns the provider name
 	Name() string
@@ -12,43 +14,27 @@ type Provider interface {
 	// Available checks if the provider is installed and usable
 	Available() bool
 
-	// Start launches the network provider for the given namespace
-	// nsPath is the path to the network namespace (e.g., /proc/PID/ns/net)
-	Start(nsPath string) error
-
-	// Stop terminates the network provider
-	Stop() error
-
 	// GatewayIP returns the gateway IP address accessible from the namespace
 	GatewayIP() string
 
-	// Running returns true if the provider is currently running
-	Running() bool
+	// NetworkIsolated returns true if the provider creates an isolated network namespace
+	NetworkIsolated() bool
 }
 
-// SelectProvider returns the best available network provider
-// Prefers pasta over slirp4netns
+// SelectProvider returns the pasta network provider if available.
+// Proxy mode requires pasta for proper network isolation and traffic enforcement.
+// Returns an error if pasta is not installed.
 func SelectProvider() (Provider, error) {
 	pasta := NewPasta()
 	if pasta.Available() {
 		return pasta, nil
 	}
 
-	slirp := NewSlirp()
-	if slirp.Available() {
-		return slirp, nil
-	}
-
-	return nil, ErrNoNetworkProvider
+	return nil, ErrNoPastaProvider
 }
 
-// CheckAnyProviderAvailable returns true if any network provider is available
-func CheckAnyProviderAvailable() bool {
+// CheckPastaAvailable returns true if pasta is available
+func CheckPastaAvailable() bool {
 	pasta := NewPasta()
-	if pasta.Available() {
-		return true
-	}
-
-	slirp := NewSlirp()
-	return slirp.Available()
+	return pasta.Available()
 }

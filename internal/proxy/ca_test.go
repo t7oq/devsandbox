@@ -13,7 +13,7 @@ func TestCreateCA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
 
@@ -62,7 +62,7 @@ func TestLoadCA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
 
@@ -93,7 +93,7 @@ func TestLoadOrCreateCA_Creates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
 
@@ -112,7 +112,7 @@ func TestLoadOrCreateCA_Loads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
 
@@ -138,7 +138,7 @@ func TestSignCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
 
@@ -197,7 +197,7 @@ func TestCAExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
 
@@ -214,7 +214,7 @@ func TestCAExists(t *testing.T) {
 	}
 
 	// Remove just the cert
-	os.Remove(cfg.CACertPath)
+	_ = os.Remove(cfg.CACertPath)
 
 	if cfg.CAExists() {
 		t.Error("CAExists should return false with missing cert")
@@ -226,7 +226,7 @@ func TestEnsureCADir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	caDir := filepath.Join(tmpDir, "nested", "ca", "dir")
 	cfg := &Config{

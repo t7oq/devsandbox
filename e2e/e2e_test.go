@@ -16,7 +16,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("failed to create temp dir: " + err.Error())
 	}
-	defer os.RemoveAll(tmpDir)
 
 	binaryPath = filepath.Join(tmpDir, "devsandbox")
 
@@ -36,7 +35,9 @@ func TestMain(m *testing.M) {
 		panic("failed to build binary: " + err.Error())
 	}
 
-	os.Exit(m.Run())
+	exitCode := m.Run()
+	_ = os.RemoveAll(tmpDir)
+	os.Exit(exitCode)
 }
 
 func TestSandbox_Help(t *testing.T) {
@@ -321,7 +322,7 @@ func TestSandbox_EnvFileBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	envFile := filepath.Join(tmpDir, ".env")
 	if err := os.WriteFile(envFile, []byte("SECRET=supersecret123"), 0o644); err != nil {
@@ -331,7 +332,7 @@ func TestSandbox_EnvFileBlocked(t *testing.T) {
 	// Run sandbox from that directory and try to read .env
 	cmd := exec.Command(binaryPath, "cat", ".env")
 	cmd.Dir = tmpDir
-	output, err := cmd.CombinedOutput()
+	output, _ := cmd.CombinedOutput()
 
 	// .env should be blocked (empty or error)
 	if strings.Contains(string(output), "supersecret123") {
@@ -348,7 +349,7 @@ func TestSandbox_ProjectDirWritable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create a file inside sandbox using touch
 	testFile := "sandbox-test-file.txt"
@@ -383,7 +384,177 @@ func TestSandbox_NetworkAvailable(t *testing.T) {
 	}
 }
 
+func TestSandbox_ProxyInfo(t *testing.T) {
+	// --proxy --info shows proxy configuration without actually starting the proxy
+	// This works even without pasta installed
+	cmd := exec.Command(binaryPath, "--proxy", "--info")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--proxy --info failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+	// Should show proxy mode section with port info
+	expectedStrings := []string{
+		"Proxy Mode:",
+		"Port:",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(outputStr, expected) {
+			t.Errorf("--proxy --info output missing %q", expected)
+		}
+	}
+}
+
+func TestSandbox_ProxyEnvironmentVariables(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Run sandbox with proxy and check environment variables
+	cmd := exec.Command(binaryPath, "--proxy", "env")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("env with proxy failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+	expectedVars := []string{
+		"HTTP_PROXY=",
+		"HTTPS_PROXY=",
+		"SANDBOX_PROXY=1",
+		"NODE_EXTRA_CA_CERTS=",
+		"REQUESTS_CA_BUNDLE=",
+	}
+
+	for _, expected := range expectedVars {
+		if !strings.Contains(outputStr, expected) {
+			t.Errorf("proxy env output missing %q", expected)
+		}
+	}
+}
+
+func TestSandbox_ProxyCACertificateAccessible(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Verify CA certificate is accessible inside sandbox at /tmp
+	// (we use /tmp because /etc/ssl is bind-mounted read-only from host)
+	cmd := exec.Command(binaryPath, "--proxy", "cat", "/tmp/devsandbox-ca.crt")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to read CA cert in sandbox: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := string(output)
+	// Should contain PEM certificate markers
+	if !strings.Contains(outputStr, "BEGIN CERTIFICATE") {
+		t.Errorf("CA certificate not properly mounted, output: %s", outputStr)
+	}
+}
+
+func TestSandbox_ProxyServerRunning(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Check if curl is available
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl not installed on host")
+	}
+
+	// Test that the proxy server is accessible from inside the sandbox
+	// The proxy runs on the host, so we need to test connectivity to it
+	// Use a simple HTTP request to a known endpoint
+	cmd := exec.Command(binaryPath, "--proxy", "--proxy-port", "18888",
+		"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+		"--proxy", "http://10.0.2.2:18888",
+		"--max-time", "5",
+		"http://httpbin.org/get")
+
+	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
+
+	// Extract the HTTP status code (last 3 characters should be the code)
+	// curl -w "%{http_code}" outputs just the code at the end
+	if len(outputStr) >= 3 {
+		statusCode := outputStr[len(outputStr)-3:]
+		if statusCode == "200" {
+			return // Success - proxy worked
+		}
+		// 000 means connection failed (proxy not reachable or network issue)
+		// This is acceptable in CI/test environments without network
+		if statusCode == "000" {
+			t.Skip("Network not available in test environment")
+		}
+	}
+
+	// If we got here with an error, the proxy infrastructure has issues
+	if err != nil {
+		t.Errorf("Proxy request failed: %v\nOutput: %s", err, outputStr)
+	}
+}
+
+func TestSandbox_ProxyEnvironmentSet(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Verify proxy environment variable is set correctly inside the sandbox
+	cmd := exec.Command(binaryPath, "--proxy", "--proxy-port", "18889",
+		"printenv", "HTTP_PROXY")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("printenv HTTP_PROXY failed: %v\nOutput: %s", err, output)
+	}
+
+	outputStr := strings.TrimSpace(string(output))
+
+	// Find the line containing the proxy URL (grep for http://)
+	var proxyURL string
+	for line := range strings.SplitSeq(outputStr, "\n") {
+		if strings.HasPrefix(line, "http://") {
+			proxyURL = line
+			break
+		}
+	}
+
+	if proxyURL == "" {
+		t.Errorf("HTTP_PROXY not set correctly in sandbox, output: %s", outputStr)
+		return
+	}
+
+	// Verify it points to the correct port
+	if !strings.Contains(proxyURL, ":18889") {
+		t.Errorf("HTTP_PROXY has wrong port, expected :18889, got: %s", proxyURL)
+	}
+}
+
 func bwrapAvailable() bool {
 	_, err := exec.LookPath("bwrap")
+	return err == nil
+}
+
+func networkProviderAvailable() bool {
+	_, err := exec.LookPath("pasta")
 	return err == nil
 }

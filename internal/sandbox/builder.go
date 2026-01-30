@@ -198,8 +198,9 @@ func (b *Builder) AddCABindings() *Builder {
 func (b *Builder) AddSandboxHome() *Builder {
 	home := b.cfg.HomeDir
 
-	// Use shared network unless proxy mode is enabled
-	// (proxy mode uses --unshare-net with pasta/slirp4netns)
+	// Use shared network unless proxy mode is enabled.
+	// Proxy mode uses pasta which creates an isolated network namespace
+	// where all traffic goes through the gateway to our proxy.
 	if !b.cfg.ProxyEnabled {
 		b.ShareNet()
 	}
@@ -225,6 +226,7 @@ func (b *Builder) AddToolBindings() *Builder {
 
 	b.ROBindIfExists(filepath.Join(home, ".local", "bin"), filepath.Join(home, ".local", "bin"))
 
+	// Mise directories - read-only to prevent sandbox from modifying host's tool state
 	miseDirs := []string{
 		filepath.Join(home, ".config", "mise"),
 		filepath.Join(home, ".local", "share", "mise"),
@@ -232,7 +234,7 @@ func (b *Builder) AddToolBindings() *Builder {
 		filepath.Join(home, ".local", "state", "mise"),
 	}
 	for _, d := range miseDirs {
-		b.BindIfExists(d, d)
+		b.ROBindIfExists(d, d)
 	}
 
 	b.ROBindIfExists(filepath.Join(home, ".config", "fish"), filepath.Join(home, ".config", "fish"))
@@ -257,6 +259,9 @@ func (b *Builder) AddToolBindings() *Builder {
 			b.BindIfExists(d.path, d.path)
 		}
 	}
+
+	// Pywal (wal) cache for terminal colors
+	b.ROBindIfExists(filepath.Join(home, ".cache", "wal"), filepath.Join(home, ".cache", "wal"))
 
 	return b
 }
@@ -286,26 +291,30 @@ func (b *Builder) AddProjectBindings() *Builder {
 	b.Bind(b.cfg.ProjectDir, b.cfg.ProjectDir)
 	b.Chdir(b.cfg.ProjectDir)
 
-	envFiles := []string{".env", ".env.local", ".env.development", ".env.production", ".env.staging", ".env.test"}
-	for _, envFile := range envFiles {
-		envPath := filepath.Join(b.cfg.ProjectDir, envFile)
-		if pathExists(envPath) {
-			b.ROBind("/dev/null", envPath)
+	// Recursively find and hide all .env files
+	_ = filepath.WalkDir(b.cfg.ProjectDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // Skip inaccessible paths
 		}
-	}
 
-	subdirs := []string{"src", "app", "server", "client", "packages"}
-	for _, subdir := range subdirs {
-		subdirPath := filepath.Join(b.cfg.ProjectDir, subdir)
-		if pathExists(subdirPath) {
-			for _, envFile := range []string{".env", ".env.local", ".env.development", ".env.production"} {
-				envPath := filepath.Join(subdirPath, envFile)
-				if pathExists(envPath) {
-					b.ROBind("/dev/null", envPath)
-				}
+		// Skip directories
+		if d.IsDir() {
+			// Skip common large directories that won't have env files
+			name := d.Name()
+			if name == "node_modules" || name == ".git" || name == "vendor" || name == ".venv" {
+				return filepath.SkipDir
 			}
+			return nil
 		}
-	}
+
+		// Check if file is an env file (.env or .env.*)
+		name := d.Name()
+		if name == ".env" || (len(name) > 5 && name[:5] == ".env.") {
+			b.ROBind("/dev/null", path)
+		}
+
+		return nil
+	})
 
 	b.Tmpfs(b.cfg.XDGRuntime)
 
@@ -374,6 +383,13 @@ func (b *Builder) AddEnvironment() *Builder {
 	b.SetEnv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	b.SetEnv("XDG_RUNTIME_DIR", b.cfg.XDGRuntime)
 
+	// Isolate Go environment to prevent version conflicts with host
+	b.SetEnv("GOPATH", filepath.Join(home, "go"))
+	b.SetEnv("GOCACHE", filepath.Join(home, ".cache", "go-build"))
+	b.SetEnv("GOMODCACHE", filepath.Join(home, ".cache", "go-mod"))
+	// Prevent Go from auto-downloading different toolchains which causes version mismatches
+	b.SetEnv("GOTOOLCHAIN", "local")
+
 	b.SetEnv("EDITOR", "nvim")
 	b.SetEnv("VISUAL", "nvim")
 
@@ -404,8 +420,9 @@ func (b *Builder) AddProxyEnvironment() *Builder {
 	b.SetEnv("NO_PROXY", "localhost,127.0.0.1")
 	b.SetEnv("no_proxy", "localhost,127.0.0.1")
 
-	// CA certificate paths for various tools
-	caCertPath := "/etc/ssl/certs/devsandbox-ca.crt"
+	// CA certificate path for various tools
+	// We use /tmp because /etc/ssl is mounted read-only from host
+	caCertPath := "/tmp/devsandbox-ca.crt"
 	b.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)
 	b.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath)
 	b.SetEnv("CURL_CA_BUNDLE", caCertPath)
@@ -422,12 +439,10 @@ func (b *Builder) AddProxyCACertificate() *Builder {
 		return b
 	}
 
-	// Mount CA certificate to standard locations
-	caCertDest := "/etc/ssl/certs/devsandbox-ca.crt"
+	// Mount CA certificate to /tmp (which is a fresh tmpfs)
+	// We can't mount to /etc/ssl/certs because it's bind-mounted read-only from host
+	caCertDest := "/tmp/devsandbox-ca.crt"
 	b.ROBindIfExists(b.cfg.ProxyCAPath, caCertDest)
-
-	// Also mount to other common locations
-	b.ROBindIfExists(b.cfg.ProxyCAPath, "/usr/local/share/ca-certificates/devsandbox-ca.crt")
 
 	return b
 }

@@ -1,24 +1,17 @@
 package network
 
-import (
-	"fmt"
-	"os"
-	"os/exec"
-	"sync"
-	"syscall"
-)
+import "os/exec"
 
 const (
 	pastaCommand   = "pasta"
 	pastaGatewayIP = "10.0.2.2" // Default gateway for pasta
 )
 
-// Pasta implements the Provider interface using pasta (from passt package)
-type Pasta struct {
-	cmd     *exec.Cmd
-	mu      sync.Mutex
-	running bool
-}
+// Pasta implements the Provider interface using pasta (from passt package).
+// Pasta provides user-mode networking for unprivileged network namespaces.
+// When used with bwrap, it creates an isolated network where all traffic
+// must go through the gateway IP (10.0.2.2), which maps to the host's loopback.
+type Pasta struct{}
 
 // NewPasta creates a new pasta provider
 func NewPasta() *Pasta {
@@ -36,72 +29,14 @@ func (p *Pasta) Available() bool {
 	return err == nil
 }
 
-// Start launches pasta for the given network namespace
-func (p *Pasta) Start(nsPath string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.running {
-		return fmt.Errorf("pasta already running")
-	}
-
-	// pasta arguments:
-	// --netns PATH: Use existing network namespace
-	// --map-host-loopback: Allow access to host's loopback
-	// -f: Run in foreground
-	args := []string{
-		"--netns", nsPath,
-		"--map-host-loopback",
-		"-f",
-	}
-
-	p.cmd = exec.Command(pastaCommand, args...)
-	p.cmd.Stdout = os.Stdout
-	p.cmd.Stderr = os.Stderr
-
-	// Set process group so we can kill the whole group
-	p.cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	if err := p.cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start pasta: %w", err)
-	}
-
-	p.running = true
-	return nil
-}
-
-// Stop terminates pasta
-func (p *Pasta) Stop() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if !p.running || p.cmd == nil || p.cmd.Process == nil {
-		return nil
-	}
-
-	// Kill the process group
-	pgid, err := syscall.Getpgid(p.cmd.Process.Pid)
-	if err == nil {
-		syscall.Kill(-pgid, syscall.SIGTERM)
-	} else {
-		p.cmd.Process.Kill()
-	}
-
-	p.cmd.Wait()
-	p.running = false
-	return nil
-}
-
-// GatewayIP returns the gateway IP for pasta
+// GatewayIP returns the gateway IP for pasta.
+// This IP (10.0.2.2) is mapped to the host's 127.0.0.1 via --map-host-loopback.
 func (p *Pasta) GatewayIP() string {
 	return pastaGatewayIP
 }
 
-// Running returns true if pasta is running
-func (p *Pasta) Running() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.running
+// NetworkIsolated returns true as pasta provides full network namespace isolation.
+// All traffic from the sandbox must go through pasta's virtual network interface.
+func (p *Pasta) NetworkIsolated() bool {
+	return true
 }

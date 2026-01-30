@@ -18,7 +18,7 @@ func TestNewServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, 0, false) // Port 0 for random port
 
@@ -41,7 +41,7 @@ func TestServerStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, 18080, false)
 
@@ -81,7 +81,7 @@ func TestServerHTTPProxy(t *testing.T) {
 	// Start a test HTTP server
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "hello from test server")
+		_, _ = fmt.Fprint(w, "hello from test server")
 	}))
 	defer testServer.Close()
 
@@ -90,7 +90,7 @@ func TestServerHTTPProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, 18081, false)
 
@@ -102,7 +102,7 @@ func TestServerHTTPProxy(t *testing.T) {
 	if err := proxyServer.Start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
-	defer proxyServer.Stop()
+	defer func() { _ = proxyServer.Stop() }()
 
 	// Give the server a moment to start
 	time.Sleep(100 * time.Millisecond)
@@ -121,7 +121,7 @@ func TestServerHTTPProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request through proxy failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("unexpected status: %d", resp.StatusCode)
@@ -137,7 +137,7 @@ func TestServerHTTPSProxy(t *testing.T) {
 	// Start a test HTTPS server
 	testServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "hello from TLS server")
+		_, _ = fmt.Fprint(w, "hello from TLS server")
 	}))
 	defer testServer.Close()
 
@@ -146,7 +146,7 @@ func TestServerHTTPSProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, 18082, false)
 
@@ -158,7 +158,7 @@ func TestServerHTTPSProxy(t *testing.T) {
 	if err := proxyServer.Start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
-	defer proxyServer.Stop()
+	defer func() { _ = proxyServer.Stop() }()
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -186,7 +186,7 @@ func TestServerHTTPSProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTTPS request through proxy failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("unexpected status: %d", resp.StatusCode)
@@ -203,7 +203,7 @@ func TestServerWithLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	cfg := NewConfig(tmpDir, 18083, true) // Enable logging
 
@@ -219,5 +219,65 @@ func TestServerWithLogging(t *testing.T) {
 	if err := server.Start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
+}
+
+func TestServerDynamicPortSelection(t *testing.T) {
+	// Create two servers requesting the same port
+	// The second should automatically get a different port
+
+	tmpDir1, err := os.MkdirTemp("", "proxy-test-1-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir1) }()
+
+	tmpDir2, err := os.MkdirTemp("", "proxy-test-2-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir2) }()
+
+	// Both request port 18084
+	requestedPort := 18084
+
+	cfg1 := NewConfig(tmpDir1, requestedPort, false)
+	server1, err := NewServer(cfg1)
+	if err != nil {
+		t.Fatalf("NewServer 1 failed: %v", err)
+	}
+
+	if err := server1.Start(); err != nil {
+		t.Fatalf("Start 1 failed: %v", err)
+	}
+	defer func() { _ = server1.Stop() }()
+
+	// Server 1 should get the requested port
+	if server1.Port() != requestedPort {
+		t.Errorf("server1 should get requested port %d, got %d", requestedPort, server1.Port())
+	}
+
+	// Now start second server requesting same port
+	cfg2 := NewConfig(tmpDir2, requestedPort, false)
+	server2, err := NewServer(cfg2)
+	if err != nil {
+		t.Fatalf("NewServer 2 failed: %v", err)
+	}
+
+	if err := server2.Start(); err != nil {
+		t.Fatalf("Start 2 failed: %v", err)
+	}
+	defer func() { _ = server2.Stop() }()
+
+	// Server 2 should get a different port
+	if server2.Port() == requestedPort {
+		t.Errorf("server2 should get different port than %d", requestedPort)
+	}
+
+	// Server 2 should get the next port
+	if server2.Port() != requestedPort+1 {
+		t.Errorf("server2 should get port %d, got %d", requestedPort+1, server2.Port())
+	}
+
+	t.Logf("Server 1 port: %d, Server 2 port: %d", server1.Port(), server2.Port())
 }
