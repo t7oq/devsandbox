@@ -20,7 +20,7 @@ Linters: golangci + go default linters.
 
 ## TODOs
 
-- review docs for consistency and accuracy
+- update included commit info to include hash of modifications and dirty state
 - http filtering
     - ability to define whitelist/blacklist/ask mode for http(s) requests
 - configuration support
@@ -31,7 +31,8 @@ Linters: golangci + go default linters.
 - improve doctor
     - check internal logs for recent issues
     - check overlayfs support (if needed)
-    - check available tools and their versions
+- make git access configurable
+    - read-only / read-write / disabled
 - capture more audit data (e.g. files access, attempts to access restricted files, attempts to access network etc)
 
 Backlog:

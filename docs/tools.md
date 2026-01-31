@@ -22,17 +22,25 @@ devsandbox tools list --json
 Example output:
 
 ```
-┌────────────┬───────────┬───────────────────────────────────────────────┐
-│    NAME    │  STATUS   │                  DESCRIPTION                  │
-├────────────┼───────────┼───────────────────────────────────────────────┤
-│ claude     │ available │ Claude Code AI assistant                      │
-│ git        │ available │ Git configuration (safe mode, no credentials) │
-│ go         │ available │ Go language environment isolation             │
-│ mise       │ available │ Tool version manager (node, python, go, etc.) │
-│ nvim       │ available │ Neovim editor configuration                   │
-│ starship   │ available │ Starship prompt with sandbox indicator        │
-└────────────┴───────────┴───────────────────────────────────────────────┘
+┌───────────────┬───────────┬───────────────────────────────────────────────┐
+│     NAME      │  STATUS   │                  DESCRIPTION                  │
+├───────────────┼───────────┼───────────────────────────────────────────────┤
+│ claude        │ available │ Claude Code AI assistant                      │
+│ copilot       │ available │ GitHub Copilot integration                    │
+│ git           │ available │ Git configuration (safe mode, no credentials) │
+│ go            │ available │ Go language environment isolation             │
+│ mise          │ available │ Tool version manager (node, python, go, etc.) │
+│ nvim          │ available │ Neovim editor configuration                   │
+│ oh-my-posh    │ missing   │ Oh My Posh prompt with sandbox indicator      │
+│ oh-my-zsh     │ missing   │ Oh My Zsh framework with sandbox indicator    │
+│ opencode      │ available │ OpenCode AI assistant                         │
+│ powerlevel10k │ missing   │ Powerlevel10k zsh theme                       │
+│ starship      │ available │ Starship prompt with sandbox indicator        │
+│ tmux          │ missing   │ Tmux terminal multiplexer with sandbox indicator │
+└───────────────┴───────────┴───────────────────────────────────────────────┘
 ```
+
+Note: Tools show as "available" if their binary is found or config exists, "missing" otherwise.
 
 ### Tool Details
 
@@ -198,6 +206,43 @@ devsandbox detects your shell from `$SHELL` and loads appropriate configurations
 
 **Note:** Shell configurations are read-only. Changes made inside the sandbox won't persist.
 
+## Prompt Tools
+
+devsandbox can display a sandbox indicator in your shell prompt. Several popular prompt tools are supported.
+
+### Environment Variables
+
+Inside the sandbox, these variables are always set:
+
+- `DEVSANDBOX=1` - Indicates running inside a sandbox
+- `DEVSANDBOX_PROJECT=<name>` - The project name
+
+You can use these in custom prompt configurations.
+
+### Starship
+
+[Starship](https://starship.rs/) is automatically configured with a `[sandbox]` indicator:
+
+```
+~/.config/starship.toml → Modified with sandbox segment
+```
+
+### Powerlevel10k
+
+[Powerlevel10k](https://github.com/romkatv/powerlevel10k) is configured with a custom `devsandbox` segment that shows when `$DEVSANDBOX` is set.
+
+### Oh My Zsh
+
+[Oh My Zsh](https://ohmyz.sh/) gets a sandbox indicator prepended to the `PROMPT`.
+
+### Oh My Posh
+
+[Oh My Posh](https://ohmyposh.dev/) configurations are mounted. You can add a custom segment using the `$DEVSANDBOX` environment variable.
+
+### tmux
+
+[tmux](https://github.com/tmux/tmux) is configured to show `[SANDBOX]` in the status bar with a red background when running inside the sandbox.
+
 ## Editor Support
 
 ### Neovim
@@ -235,11 +280,12 @@ devsandbox claude
 devsandbox claude --dangerously-skip-permissions
 ```
 
-Configuration directories are mounted:
+Configuration directories are mounted read-write to allow Claude to save settings:
 
 ```
-~/.claude      → Sandbox (read-only)
-~/.claude.json → Sandbox (read-only)
+~/.claude           → Sandbox (read-write)
+~/.config/Claude    → Sandbox (read-write)
+~/.claude.json      → Sandbox (read-write)
 ```
 
 ### GitHub Copilot

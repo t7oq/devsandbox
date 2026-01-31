@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	DefaultProxyPort   = 18080 // Use non-standard port to avoid conflicts with dev servers
-	MaxPortRetries     = 50    // Number of ports to try if default is busy
+	DefaultProxyPort   = 8080 // Standard proxy port, matches config.toml default
+	MaxPortRetries     = 50   // Number of ports to try if default is busy
 	CADirName          = ".ca"
 	CACertFile         = "ca.crt"
 	CAKeyFile          = "ca.key"
