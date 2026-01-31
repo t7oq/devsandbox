@@ -20,7 +20,6 @@ Linters: golangci + go default linters.
 
 ## TODOs
 
-- add shell prompts for other tools to show that sandbox is active
 - review docs for consistency and accuracy
 - http filtering
     - ability to define whitelist/blacklist/ask mode for http(s) requests
@@ -38,4 +37,5 @@ Linters: golangci + go default linters.
 Backlog:
 
 - macOS support
+  - bubblewrap is available
 - tcp/udp proxying
