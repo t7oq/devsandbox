@@ -36,7 +36,7 @@ func newListCmd() *cobra.Command {
 	var (
 		jsonOutput bool
 		sortBy     string
-		showSize   bool
+		noSize     bool
 	)
 
 	cmd := &cobra.Command{
@@ -45,7 +45,8 @@ func newListCmd() *cobra.Command {
 		Long:  "List all sandbox instances with their metadata",
 		Example: `  devsandbox sandboxes list
   devsandbox sandboxes list --json
-  devsandbox sandboxes list --sort used --size`,
+  devsandbox sandboxes list --sort used
+  devsandbox sandboxes list --no-size`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			homeDir, err := os.UserHomeDir()
 			if err != nil {
@@ -63,8 +64,8 @@ func newListCmd() *cobra.Command {
 				return nil
 			}
 
-			// Calculate sizes if requested
-			if showSize {
+			// Calculate sizes (default: on)
+			if !noSize {
 				for _, s := range sandboxes {
 					size, _ := sandbox.GetSandboxSize(s.SandboxRoot)
 					s.SizeBytes = size
@@ -78,13 +79,13 @@ func newListCmd() *cobra.Command {
 				return printJSON(sandboxes)
 			}
 
-			return printTable(sandboxes, showSize)
+			return printTable(sandboxes, !noSize)
 		},
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	cmd.Flags().StringVar(&sortBy, "sort", "name", "Sort by: name, created, used, size")
-	cmd.Flags().BoolVar(&showSize, "size", false, "Calculate and show sandbox sizes (slower)")
+	cmd.Flags().BoolVar(&noSize, "no-size", false, "Skip size calculation (faster)")
 
 	return cmd
 }
