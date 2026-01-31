@@ -18,6 +18,10 @@ func (f *Fish) Name() string {
 	return "shell-fish"
 }
 
+func (f *Fish) Description() string {
+	return "Fish shell configuration"
+}
+
 func (f *Fish) Available(homeDir string) bool {
 	// Check if fish config exists
 	fishConfig := filepath.Join(homeDir, ".config", "fish")
@@ -53,6 +57,10 @@ type Zsh struct{}
 
 func (z *Zsh) Name() string {
 	return "shell-zsh"
+}
+
+func (z *Zsh) Description() string {
+	return "Zsh shell configuration"
 }
 
 func (z *Zsh) Available(homeDir string) bool {
@@ -121,6 +129,10 @@ type Bash struct{}
 
 func (b *Bash) Name() string {
 	return "shell-bash"
+}
+
+func (b *Bash) Description() string {
+	return "Bash shell configuration"
 }
 
 func (b *Bash) Available(homeDir string) bool {

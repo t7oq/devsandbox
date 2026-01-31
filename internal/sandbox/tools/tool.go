@@ -24,6 +24,9 @@ type Tool interface {
 	// Name returns a unique identifier for this tool.
 	Name() string
 
+	// Description returns a short description of what this tool provides.
+	Description() string
+
 	// Available checks if this tool is installed/usable on the host.
 	// homeDir is the user's home directory.
 	Available(homeDir string) bool

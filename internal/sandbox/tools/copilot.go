@@ -17,6 +17,10 @@ func (c *Copilot) Name() string {
 	return "copilot"
 }
 
+func (c *Copilot) Description() string {
+	return "GitHub Copilot integration"
+}
+
 func (c *Copilot) Available(homeDir string) bool {
 	// Check if copilot directories exist
 	paths := []string{

@@ -18,6 +18,10 @@ func (s *Starship) Name() string {
 	return "starship"
 }
 
+func (s *Starship) Description() string {
+	return "Starship prompt with sandbox indicator"
+}
+
 func (s *Starship) Available(homeDir string) bool {
 	// Check if starship is installed and user has a config
 	if _, err := exec.LookPath("starship"); err != nil {

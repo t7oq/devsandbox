@@ -18,6 +18,10 @@ func (n *Nvim) Name() string {
 	return "nvim"
 }
 
+func (n *Nvim) Description() string {
+	return "Neovim editor configuration"
+}
+
 func (n *Nvim) Available(homeDir string) bool {
 	_, err := exec.LookPath("nvim")
 	return err == nil

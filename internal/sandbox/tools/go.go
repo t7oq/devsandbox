@@ -17,6 +17,10 @@ func (g *Go) Name() string {
 	return "go"
 }
 
+func (g *Go) Description() string {
+	return "Go language environment isolation"
+}
+
 func (g *Go) Available(homeDir string) bool {
 	// Go is always "available" - we set up the environment regardless
 	// of whether Go is installed, so tools work correctly when added later

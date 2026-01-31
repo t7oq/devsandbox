@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"devsandbox/internal/sandbox"
+	"devsandbox/internal/sandbox/tools"
 )
 
 type checkResult struct {
@@ -53,6 +54,9 @@ func runDoctor() error {
 	results = append(results, checkKernelVersion())
 
 	printDoctorResults(results)
+
+	// Print detected tools
+	printDetectedTools()
 
 	hasError := false
 	for _, r := range results {
@@ -290,4 +294,38 @@ func printDoctorResults(results []checkResult) {
 	}
 
 	_ = table.Render()
+}
+
+func printDetectedTools() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	allTools := tools.All()
+	availableTools := tools.Available(homeDir)
+
+	// Build a set of available tool names for quick lookup
+	availableSet := make(map[string]bool)
+	for _, t := range availableTools {
+		availableSet[t.Name()] = true
+	}
+
+	fmt.Println("\nDetected Tools:")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.Header("TOOL", "STATUS", "DESCRIPTION")
+
+	for _, t := range allTools {
+		status := "✗ not found"
+		if availableSet[t.Name()] {
+			status = "✓ available"
+		}
+
+		_ = table.Append(t.Name(), status, t.Description())
+	}
+
+	_ = table.Render()
+
+	fmt.Printf("\n%d of %d tools available\n", len(availableTools), len(allTools))
 }

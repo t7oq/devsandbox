@@ -18,6 +18,10 @@ func (m *Mise) Name() string {
 	return "mise"
 }
 
+func (m *Mise) Description() string {
+	return "Tool version manager (node, python, go, etc.)"
+}
+
 func (m *Mise) Available(homeDir string) bool {
 	_, err := exec.LookPath("mise")
 	return err == nil

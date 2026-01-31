@@ -17,6 +17,10 @@ func (o *OpenCode) Name() string {
 	return "opencode"
 }
 
+func (o *OpenCode) Description() string {
+	return "OpenCode AI assistant"
+}
+
 func (o *OpenCode) Available(homeDir string) bool {
 	// Check if opencode directories exist
 	paths := []string{

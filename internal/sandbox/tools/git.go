@@ -21,6 +21,10 @@ func (g *Git) Name() string {
 	return "git"
 }
 
+func (g *Git) Description() string {
+	return "Git configuration (safe mode, no credentials)"
+}
+
 func (g *Git) Available(homeDir string) bool {
 	// Check if user has a gitconfig
 	gitconfig := filepath.Join(homeDir, ".gitconfig")

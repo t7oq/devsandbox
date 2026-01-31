@@ -17,6 +17,10 @@ func (p *Pywal) Name() string {
 	return "pywal"
 }
 
+func (p *Pywal) Description() string {
+	return "Terminal color scheme (wal cache)"
+}
+
 func (p *Pywal) Available(homeDir string) bool {
 	// Check if wal cache exists
 	walCache := filepath.Join(homeDir, ".cache", "wal")

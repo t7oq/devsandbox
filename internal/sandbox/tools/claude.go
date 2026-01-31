@@ -18,6 +18,10 @@ func (c *Claude) Name() string {
 	return "claude"
 }
 
+func (c *Claude) Description() string {
+	return "Claude Code AI assistant"
+}
+
 func (c *Claude) Available(homeDir string) bool {
 	// Check if claude is installed or if claude config exists
 	if _, err := exec.LookPath("claude"); err == nil {
