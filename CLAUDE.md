@@ -20,19 +20,22 @@ Linters: golangci + go default linters.
 
 ## TODOs
 
+- add shell prompts for other tools to show that sandbox is active
+- review docs for consistency and accuracy
 - http filtering
-  - ability to define whitelist/blacklist/ask mode for http(s) requests
+    - ability to define whitelist/blacklist/ask mode for http(s) requests
 - configuration support
-  - allow to configure tools to be enabled, proxy config
-    - allow to generate config from logs for proxy
-    - allow to generate config for tools based on detected tools availability
-  - allow to configure per-project settings
+    - allow to configure tools to be enabled, proxy config
+        - allow to generate config from logs for proxy
+        - allow to generate config for tools based on detected tools availability
+    - allow to configure per-project settings
 - improve doctor
-  - check internal logs for recent issues
-  - check overlayfs support
-  - check available tools and their versions
+    - check internal logs for recent issues
+    - check overlayfs support (if needed)
+    - check available tools and their versions
 - capture more audit data (e.g. files access, attempts to access restricted files, attempts to access network etc)
- 
+
 Backlog:
+
 - macOS support
 - tcp/udp proxying

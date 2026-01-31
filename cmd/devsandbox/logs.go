@@ -431,11 +431,13 @@ func followProxyLogs(logDir string, filter *ProxyLogFilter, jsonOutput, compact,
 
 	pattern := filepath.Join(logDir, proxy.RequestLogPrefix+"*"+proxy.RequestLogSuffix)
 
-	// Track the last file and position
+	// Track seen entries by file and count
+	// For gzip files, we can't seek to arbitrary positions - gzip streams
+	// must be read from their header. So we re-read and skip seen entries.
 	var lastFile string
-	var lastPos int64
+	var seenCount int
 
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
 	fmt.Fprintf(os.Stderr, "Following logs in %s (Ctrl+C to stop)...\n", logDir)
@@ -457,21 +459,21 @@ func followProxyLogs(logDir string, filter *ProxyLogFilter, jsonOutput, compact,
 			sort.Strings(files)
 			currentFile := files[len(files)-1]
 
-			// If file changed, reset position
+			// If file changed, reset seen count
 			if currentFile != lastFile {
 				lastFile = currentFile
-				lastPos = 0
+				seenCount = 0
 			}
 
-			// Read new entries from current file
-			entries, newPos, err := readProxyLogFileFrom(currentFile, lastPos)
+			// Read all entries from file (gzip requires reading from start)
+			entries, err := readProxyLogFile(currentFile)
 			if err != nil {
 				continue
 			}
-			lastPos = newPos
 
-			// Filter and display
-			for _, e := range entries {
+			// Skip already seen entries, display new ones
+			for i := seenCount; i < len(entries); i++ {
+				e := entries[i]
 				if filter.Match(&e) {
 					if jsonOutput {
 						data, _ := json.Marshal(e)
@@ -483,6 +485,7 @@ func followProxyLogs(logDir string, filter *ProxyLogFilter, jsonOutput, compact,
 					}
 				}
 			}
+			seenCount = len(entries)
 		}
 	}
 }
@@ -527,65 +530,6 @@ func readProxyLogFile(path string) ([]proxy.RequestLog, error) {
 	}
 
 	return entries, nil
-}
-
-func readProxyLogFileFrom(path string, offset int64) ([]proxy.RequestLog, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, offset, err
-	}
-	defer func() { _ = f.Close() }()
-
-	// Get current file size
-	info, err := f.Stat()
-	if err != nil {
-		return nil, offset, err
-	}
-
-	// If file hasn't grown, nothing to read
-	if info.Size() <= offset {
-		return nil, offset, nil
-	}
-
-	// Seek to last position
-	if offset > 0 {
-		_, err = f.Seek(offset, io.SeekStart)
-		if err != nil {
-			return nil, offset, err
-		}
-	}
-
-	var entries []proxy.RequestLog
-
-	// Read new gzip stream(s)
-	for {
-		gz, err := gzip.NewReader(f)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			break
-		}
-
-		decoder := json.NewDecoder(gz)
-		for {
-			var entry proxy.RequestLog
-			if err := decoder.Decode(&entry); err != nil {
-				if err == io.EOF {
-					break
-				}
-				// Handle truncated gzip stream
-				if err == io.ErrUnexpectedEOF || strings.Contains(err.Error(), "unexpected EOF") {
-					break
-				}
-				continue
-			}
-			entries = append(entries, entry)
-		}
-		_ = gz.Close()
-	}
-
-	return entries, info.Size(), nil
 }
 
 func printProxyLogsJSON(entries []proxy.RequestLog, showBody bool) error {
