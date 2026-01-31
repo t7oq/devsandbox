@@ -1,6 +1,8 @@
 package sandbox
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,9 +53,18 @@ func NewConfig() (*Config, error) {
 		return nil, err
 	}
 
-	projectName := SanitizeProjectName(filepath.Base(projectDir))
-	// Use XDG-compliant path: ~/.local/share/devsandbox/<project>
-	sandboxRoot := filepath.Join(homeDir, ".local", "share", SandboxBaseDir, projectName)
+	baseDir := filepath.Join(homeDir, ".local", "share", SandboxBaseDir)
+
+	// Check for existing sandbox for this project directory (backward compatibility)
+	var projectName string
+	if existingName, found := FindExistingSandbox(baseDir, projectDir); found {
+		projectName = existingName
+	} else {
+		// Generate new unique name with hash suffix
+		projectName = GenerateSandboxName(projectDir)
+	}
+
+	sandboxRoot := filepath.Join(baseDir, projectName)
 	sandboxHome := filepath.Join(sandboxRoot, "home")
 
 	xdgRuntime := os.Getenv("XDG_RUNTIME_DIR")
@@ -101,6 +112,42 @@ var nonAlphanumericRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
 func SanitizeProjectName(name string) string {
 	return nonAlphanumericRe.ReplaceAllString(name, "_")
+}
+
+// GenerateSandboxName creates a unique sandbox name from project path.
+// Format: <basename>-<short-hash> (e.g., "myproject-a1b2c3d4")
+func GenerateSandboxName(projectDir string) string {
+	basename := SanitizeProjectName(filepath.Base(projectDir))
+	hash := sha256.Sum256([]byte(projectDir))
+	shortHash := hex.EncodeToString(hash[:])[:8]
+	return basename + "-" + shortHash
+}
+
+// FindExistingSandbox looks for a sandbox that matches the given project directory.
+// Returns the sandbox name and true if found, empty string and false otherwise.
+func FindExistingSandbox(baseDir, projectDir string) (string, bool) {
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		return "", false
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		sandboxRoot := filepath.Join(baseDir, entry.Name())
+		m, err := LoadMetadata(sandboxRoot)
+		if err != nil {
+			continue
+		}
+
+		if m.ProjectDir == projectDir {
+			return entry.Name(), true
+		}
+	}
+
+	return "", false
 }
 
 func (c *Config) EnsureSandboxDirs() error {
