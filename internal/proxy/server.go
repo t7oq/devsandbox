@@ -8,23 +8,29 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 
 	"github.com/elazarl/goproxy"
 )
 
+const (
+	ProxyLogPrefix = "proxy"
+	ProxyLogSuffix = ".log.gz"
+)
+
 type Server struct {
-	config    *Config
-	ca        *CA
-	proxy     *goproxy.ProxyHttpServer
-	listener  net.Listener
-	server    *http.Server
-	logger    *log.Logger
-	reqLogger *RequestLogger
-	wg        sync.WaitGroup
-	mu        sync.Mutex
-	running   bool
+	config      *Config
+	ca          *CA
+	proxy       *goproxy.ProxyHttpServer
+	listener    net.Listener
+	server      *http.Server
+	reqLogger   *RequestLogger
+	proxyLogger *RotatingFileWriter
+	wg          sync.WaitGroup
+	mu          sync.Mutex
+	running     bool
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -35,24 +41,32 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	proxy := goproxy.NewProxyHttpServer()
 
-	var logger *log.Logger
-	if cfg.LogEnabled {
-		logger = log.New(os.Stderr, "[proxy] ", log.LstdFlags)
-		proxy.Verbose = true
+	// Create rotating file writer for goproxy's internal logs (warnings, errors)
+	proxyLogger, err := NewRotatingFileWriter(RotatingFileWriterConfig{
+		Dir:    filepath.Join(cfg.LogDir, "internal"),
+		Prefix: ProxyLogPrefix,
+		Suffix: ProxyLogSuffix,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create proxy logger: %w", err)
 	}
+
+	// Route goproxy's internal warnings to rotating file
+	proxy.Logger = log.New(proxyLogger, "", log.LstdFlags)
 
 	// Create request logger for persisting full request/response data
 	reqLogger, err := NewRequestLogger(cfg.LogDir)
 	if err != nil {
+		_ = proxyLogger.Close()
 		return nil, fmt.Errorf("failed to create request logger: %w", err)
 	}
 
 	s := &Server{
-		config:    cfg,
-		ca:        ca,
-		proxy:     proxy,
-		logger:    logger,
-		reqLogger: reqLogger,
+		config:      cfg,
+		ca:          ca,
+		proxy:       proxy,
+		reqLogger:   reqLogger,
+		proxyLogger: proxyLogger,
 	}
 
 	s.setupMITM()
@@ -80,12 +94,8 @@ func (s *Server) setupMITM() {
 }
 
 func (s *Server) setupLogging() {
-	// Always set up request logging for persistence
+	// Set up request logging for persistence to files
 	s.proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		if s.logger != nil {
-			s.logger.Printf(">> %s %s", req.Method, req.URL)
-		}
-
 		// Capture request for logging
 		entry, _ := s.reqLogger.LogRequest(req)
 		ctx.UserData = entry
@@ -94,16 +104,10 @@ func (s *Server) setupLogging() {
 	})
 
 	s.proxy.OnResponse().DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		if s.logger != nil && resp != nil {
-			s.logger.Printf("<< %d %s", resp.StatusCode, ctx.Req.URL)
-		}
-
 		// Complete and persist log entry
 		if entry, ok := ctx.UserData.(*RequestLog); ok {
 			s.reqLogger.LogResponse(entry, resp, entry.Timestamp)
-			if err := s.reqLogger.Log(entry); err != nil && s.logger != nil {
-				s.logger.Printf("failed to write request log: %v", err)
-			}
+			_ = s.reqLogger.Log(entry)
 		}
 
 		return resp
@@ -157,16 +161,9 @@ func (s *Server) Start() error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		if err := s.server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			if s.logger != nil {
-				s.logger.Printf("server error: %v", err)
-			}
-		}
+		// Server errors are silently ignored - logs are written to files
+		_ = s.server.Serve(listener)
 	}()
-
-	if s.logger != nil {
-		s.logger.Printf("Proxy server started on %s", s.listener.Addr().String())
-	}
 
 	return nil
 }
@@ -199,13 +196,12 @@ func (s *Server) Stop() error {
 
 	s.wg.Wait()
 
-	// Close request logger to flush remaining data
+	// Close loggers to flush remaining data
 	if s.reqLogger != nil {
 		_ = s.reqLogger.Close()
 	}
-
-	if s.logger != nil {
-		s.logger.Printf("Proxy server stopped")
+	if s.proxyLogger != nil {
+		_ = s.proxyLogger.Close()
 	}
 
 	return nil

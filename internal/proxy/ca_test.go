@@ -15,7 +15,7 @@ func TestCreateCA(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
+	cfg := NewConfig(tmpDir, DefaultProxyPort)
 
 	ca, err := CreateCA(cfg)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestLoadCA(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
+	cfg := NewConfig(tmpDir, DefaultProxyPort)
 
 	// Create CA first
 	originalCA, err := CreateCA(cfg)
@@ -95,7 +95,7 @@ func TestLoadOrCreateCA_Creates(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
+	cfg := NewConfig(tmpDir, DefaultProxyPort)
 
 	ca, err := LoadOrCreateCA(cfg)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestLoadOrCreateCA_Loads(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
+	cfg := NewConfig(tmpDir, DefaultProxyPort)
 
 	// Create first
 	ca1, err := LoadOrCreateCA(cfg)
@@ -140,7 +140,7 @@ func TestSignCertificate(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
+	cfg := NewConfig(tmpDir, DefaultProxyPort)
 
 	ca, err := CreateCA(cfg)
 	if err != nil {
@@ -199,7 +199,7 @@ func TestCAExists(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, DefaultProxyPort, false)
+	cfg := NewConfig(tmpDir, DefaultProxyPort)
 
 	if cfg.CAExists() {
 		t.Error("CAExists should return false before creation")

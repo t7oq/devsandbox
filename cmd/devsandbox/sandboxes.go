@@ -328,7 +328,7 @@ If no sandbox name is provided, uses the current directory's sandbox.`,
 			}
 
 			// Find log files
-			pattern := filepath.Join(logDir, proxy.LogFilePrefix+"*"+proxy.LogFileSuffix)
+			pattern := filepath.Join(logDir, proxy.RequestLogPrefix+"*"+proxy.RequestLogSuffix)
 			files, err := filepath.Glob(pattern)
 			if err != nil {
 				return err

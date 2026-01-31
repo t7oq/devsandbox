@@ -97,8 +97,11 @@ func TestBuilder_AddBaseArgs(t *testing.T) {
 	b.AddBaseArgs()
 
 	args := b.Build()
-	expected := []string{
+
+	// Check that base args are present
+	expectedPrefix := []string{
 		"--clearenv",
+		"--unshare-user",
 		"--unshare-pid",
 		"--die-with-parent",
 		"--proc", "/proc",
@@ -106,7 +109,32 @@ func TestBuilder_AddBaseArgs(t *testing.T) {
 		"--tmpfs", "/tmp",
 	}
 
-	if !reflect.DeepEqual(args, expected) {
-		t.Errorf("AddBaseArgs() = %v, want %v", args, expected)
+	if len(args) < len(expectedPrefix) {
+		t.Fatalf("AddBaseArgs() returned too few args: %v", args)
+	}
+
+	for i, expected := range expectedPrefix {
+		if args[i] != expected {
+			t.Errorf("AddBaseArgs()[%d] = %v, want %v", i, args[i], expected)
+		}
+	}
+
+	// Check that --uid and --gid are present
+	hasUID := false
+	hasGID := false
+	for i, arg := range args {
+		if arg == "--uid" && i+1 < len(args) {
+			hasUID = true
+		}
+		if arg == "--gid" && i+1 < len(args) {
+			hasGID = true
+		}
+	}
+
+	if !hasUID {
+		t.Error("AddBaseArgs() missing --uid flag")
+	}
+	if !hasGID {
+		t.Error("AddBaseArgs() missing --gid flag")
 	}
 }

@@ -20,7 +20,7 @@ func TestNewServer(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, 0, false) // Port 0 for random port
+	cfg := NewConfig(tmpDir, 0) // Port 0 for random port
 
 	server, err := NewServer(cfg)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestServerStartStop(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, 18080, false)
+	cfg := NewConfig(tmpDir, 18080)
 
 	server, err := NewServer(cfg)
 	if err != nil {
@@ -92,7 +92,7 @@ func TestServerHTTPProxy(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, 18081, false)
+	cfg := NewConfig(tmpDir, 18081)
 
 	proxyServer, err := NewServer(cfg)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestServerHTTPSProxy(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cfg := NewConfig(tmpDir, 18082, false)
+	cfg := NewConfig(tmpDir, 18082)
 
 	proxyServer, err := NewServer(cfg)
 	if err != nil {
@@ -198,30 +198,6 @@ func TestServerHTTPSProxy(t *testing.T) {
 	}
 }
 
-func TestServerWithLogging(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "proxy-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	cfg := NewConfig(tmpDir, 18083, true) // Enable logging
-
-	server, err := NewServer(cfg)
-	if err != nil {
-		t.Fatalf("NewServer failed: %v", err)
-	}
-
-	if server.logger == nil {
-		t.Error("logger should be set when logging enabled")
-	}
-
-	if err := server.Start(); err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
-	defer func() { _ = server.Stop() }()
-}
-
 func TestServerDynamicPortSelection(t *testing.T) {
 	// Create two servers requesting the same port
 	// The second should automatically get a different port
@@ -241,7 +217,7 @@ func TestServerDynamicPortSelection(t *testing.T) {
 	// Both request port 18084
 	requestedPort := 18084
 
-	cfg1 := NewConfig(tmpDir1, requestedPort, false)
+	cfg1 := NewConfig(tmpDir1, requestedPort)
 	server1, err := NewServer(cfg1)
 	if err != nil {
 		t.Fatalf("NewServer 1 failed: %v", err)
@@ -258,7 +234,7 @@ func TestServerDynamicPortSelection(t *testing.T) {
 	}
 
 	// Now start second server requesting same port
-	cfg2 := NewConfig(tmpDir2, requestedPort, false)
+	cfg2 := NewConfig(tmpDir2, requestedPort)
 	server2, err := NewServer(cfg2)
 	if err != nil {
 		t.Fatalf("NewServer 2 failed: %v", err)

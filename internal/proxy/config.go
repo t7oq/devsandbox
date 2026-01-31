@@ -17,19 +17,17 @@ const (
 type Config struct {
 	Enabled    bool
 	Port       int
-	LogEnabled bool
 	CADir      string
 	CACertPath string
 	CAKeyPath  string
 	LogDir     string
 }
 
-func NewConfig(sandboxBase string, port int, logEnabled bool) *Config {
+func NewConfig(sandboxBase string, port int) *Config {
 	caDir := filepath.Join(sandboxBase, CADirName)
 	return &Config{
 		Enabled:    true,
 		Port:       port,
-		LogEnabled: logEnabled,
 		CADir:      caDir,
 		CACertPath: filepath.Join(caDir, CACertFile),
 		CAKeyPath:  filepath.Join(caDir, CAKeyFile),
@@ -39,7 +37,7 @@ func NewConfig(sandboxBase string, port int, logEnabled bool) *Config {
 
 func DefaultConfig(homeDir string) *Config {
 	sandboxBase := filepath.Join(homeDir, ".local", "share", "devsandbox")
-	return NewConfig(sandboxBase, DefaultProxyPort, false)
+	return NewConfig(sandboxBase, DefaultProxyPort)
 }
 
 func (c *Config) EnsureCADir() error {

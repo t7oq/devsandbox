@@ -31,6 +31,11 @@ func (b *Builder) ClearEnv() *Builder {
 	return b
 }
 
+func (b *Builder) UnshareUser() *Builder {
+	b.add("--unshare-user")
+	return b
+}
+
 func (b *Builder) UnsharePID() *Builder {
 	b.add("--unshare-pid")
 	return b
@@ -113,12 +118,21 @@ func (b *Builder) SetEnvIfSet(name string) *Builder {
 }
 
 func (b *Builder) AddBaseArgs() *Builder {
-	return b.ClearEnv().
+	b.ClearEnv().
+		UnshareUser().
 		UnsharePID().
 		DieWithParent().
 		Proc("/proc").
 		Dev("/dev").
 		Tmpfs("/tmp")
+
+	// Map current user inside the sandbox (prevents running as root)
+	uid := os.Getuid()
+	gid := os.Getgid()
+	b.add("--uid", fmt.Sprintf("%d", uid))
+	b.add("--gid", fmt.Sprintf("%d", gid))
+
+	return b
 }
 
 func (b *Builder) AddSystemBindings() *Builder {

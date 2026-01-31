@@ -34,7 +34,6 @@ type Config struct {
 	// Proxy settings
 	ProxyEnabled bool
 	ProxyPort    int
-	ProxyLog     bool
 	ProxyCAPath  string
 	GatewayIP    string
 	// True if network namespace is isolated (pasta)

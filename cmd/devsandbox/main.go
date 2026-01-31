@@ -61,7 +61,6 @@ Proxy Mode (--proxy):
 	rootCmd.Flags().Bool("info", false, "Show sandbox configuration")
 	rootCmd.Flags().Bool("proxy", false, "Enable proxy mode (route traffic through MITM proxy)")
 	rootCmd.Flags().Int("proxy-port", proxy.DefaultProxyPort, "Proxy server port")
-	rootCmd.Flags().Bool("proxy-log", false, "Log all HTTP/HTTPS requests through proxy")
 
 	// Add subcommands
 	rootCmd.AddCommand(newSandboxesCmd())
@@ -79,7 +78,6 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	showInfo, _ := cmd.Flags().GetBool("info")
 	proxyEnabled, _ := cmd.Flags().GetBool("proxy")
 	proxyPort, _ := cmd.Flags().GetInt("proxy-port")
-	proxyLog, _ := cmd.Flags().GetBool("proxy-log")
 
 	cfg, err := sandbox.NewConfig()
 	if err != nil {
@@ -89,7 +87,6 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	// Configure proxy settings
 	cfg.ProxyEnabled = proxyEnabled
 	cfg.ProxyPort = proxyPort
-	cfg.ProxyLog = proxyLog
 
 	if showInfo {
 		printInfo(cfg)
@@ -119,7 +116,7 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 		cfg.NetworkIsolated = netProvider.NetworkIsolated()
 
 		// Set up proxy
-		proxyCfg := proxy.NewConfig(cfg.SandboxRoot, proxyPort, proxyLog)
+		proxyCfg := proxy.NewConfig(cfg.SandboxRoot, proxyPort)
 		proxyServer, err = proxy.NewServer(proxyCfg)
 		if err != nil {
 			return fmt.Errorf("failed to create proxy server: %w", err)
@@ -232,7 +229,7 @@ func printInfo(cfg *sandbox.Config) {
 		fmt.Println()
 		fmt.Println("Proxy Mode:")
 		fmt.Printf("  Port:     %d\n", cfg.ProxyPort)
-		fmt.Printf("  Logging:  %v\n", cfg.ProxyLog)
+		fmt.Printf("  Log Dir:  %s/proxy-logs/\n", cfg.SandboxRoot)
 		fmt.Printf("  CA Path:  %s\n", cfg.ProxyCAPath)
 		fmt.Printf("  Gateway:  %s\n", cfg.GatewayIP)
 	}

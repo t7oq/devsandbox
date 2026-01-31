@@ -4,7 +4,8 @@ A secure sandbox for running untrusted development tools. Uses [bubblewrap](http
 
 ## Why?
 
-AI coding assistants like Claude Code, GitHub Copilot, and others can execute arbitrary commands on your system. While useful, this creates security risks—especially when working with untrusted code or allowing agents to run with elevated permissions.
+AI coding assistants like Claude Code, GitHub Copilot, and others can execute arbitrary commands on your system. 
+While useful, this creates security risks—especially when working with untrusted code or allowing agents to run with elevated permissions.
 
 `devsandbox` provides a security boundary that:
 - Allows full read/write access to your project directory
@@ -84,9 +85,6 @@ Proxy mode creates a fully isolated network namespace where all HTTP/HTTPS traff
 ```bash
 # Enable proxy mode
 devsandbox --proxy
-
-# With request logging to stderr
-devsandbox --proxy --proxy-log
 
 # Custom proxy port
 devsandbox --proxy --proxy-port 9090
