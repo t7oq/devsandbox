@@ -54,12 +54,16 @@ func ExecWithPasta(bwrapArgs []string, shellCmd []string) error {
 	// --map-host-loopback 10.0.2.2: Map 10.0.2.2 to host's 127.0.0.1 (for proxy access)
 	// -f: Run in foreground (pasta exits when child exits)
 	//
-	// The wrapper script uses iptables to block all traffic except to the gateway.
-	// This ensures only 10.0.2.2 (proxy gateway -> host loopback) is reachable:
-	// - Traffic to 10.0.2.2 is allowed (our proxy)
-	// - All other traffic is rejected
-	// - UDP/TCP to internet is blocked at firewall level
-	const wrapperScript = `iptables -I OUTPUT -d 10.0.2.2 -j ACCEPT 2>/dev/null; iptables -A OUTPUT -j REJECT 2>/dev/null; exec "$@"`
+	// The wrapper script restricts network to proxy-only:
+	// 1. Add a host route to gateway (10.0.2.2) via the tap device
+	// 2. Delete the default route to block direct internet access
+	// This forces all traffic through our proxy - direct connections to external IPs will fail.
+	const wrapperScript = `
+		dev=$(ip -o route show default | awk '{print $5}')
+		ip route add 10.0.2.2/32 dev "$dev" 2>/dev/null
+		ip route del default 2>/dev/null
+		exec "$@"
+	`
 
 	args := make([]string, 0, len(bwrapArgs)+len(shellCmd)+16)
 	args = append(args, "--config-net")                    // Configure network interface

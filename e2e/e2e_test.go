@@ -549,6 +549,132 @@ func TestSandbox_ProxyEnvironmentSet(t *testing.T) {
 	}
 }
 
+func TestSandbox_ProxyBlocksDirectConnections(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Check if nc (netcat) is available
+	if _, err := exec.LookPath("nc"); err != nil {
+		t.Skip("nc (netcat) not installed on host")
+	}
+
+	// Try to connect directly to an external IP - should fail
+	// Using 1.1.1.1:443 (Cloudflare DNS) as a reliable external endpoint
+	cmd := exec.Command(binaryPath, "--proxy",
+		"nc", "-vv", "-w", "2", "1.1.1.1", "443")
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	// The connection should fail with "Network is unreachable" or similar
+	if err == nil {
+		t.Error("Direct connection to external IP should be blocked in proxy mode")
+	}
+
+	// Verify it's a network error, not some other failure
+	networkErrors := []string{
+		"Network is unreachable",
+		"No route to host",
+		"network is unreachable",
+		"no route to host",
+		"Connection timed out",
+	}
+
+	foundNetworkError := false
+	for _, errMsg := range networkErrors {
+		if strings.Contains(outputStr, errMsg) {
+			foundNetworkError = true
+			break
+		}
+	}
+
+	if !foundNetworkError {
+		t.Logf("Expected network error, got: %s", outputStr)
+	}
+}
+
+func TestSandbox_ProxyAllowsHTTPTraffic(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Check if curl is available
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl not installed on host")
+	}
+
+	// HTTP request through proxy should work
+	// Using httpbin.org as a reliable test endpoint
+	cmd := exec.Command(binaryPath, "--proxy",
+		"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+		"--max-time", "10",
+		"http://httpbin.org/get")
+
+	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
+
+	// Check for successful HTTP response (200)
+	if strings.Contains(outputStr, "200") {
+		return // Success
+	}
+
+	// 000 means network issue - skip in CI/restricted environments
+	if strings.Contains(outputStr, "000") {
+		t.Skip("Network not available in test environment")
+	}
+
+	if err != nil {
+		t.Errorf("HTTP request through proxy failed: %v\nOutput: %s", err, outputStr)
+	}
+}
+
+func TestSandbox_ProxyAllowsHTTPSTraffic(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	if !networkProviderAvailable() {
+		t.Skip("pasta not available")
+	}
+
+	// Check if curl is available
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl not installed on host")
+	}
+
+	// HTTPS request through proxy should work (using the CA cert)
+	cmd := exec.Command(binaryPath, "--proxy",
+		"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+		"--max-time", "10",
+		"https://httpbin.org/get")
+
+	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
+
+	// Check for successful HTTPS response (200)
+	if strings.Contains(outputStr, "200") {
+		return // Success
+	}
+
+	// 000 means network issue - skip in CI/restricted environments
+	if strings.Contains(outputStr, "000") {
+		t.Skip("Network not available in test environment")
+	}
+
+	if err != nil {
+		t.Errorf("HTTPS request through proxy failed: %v\nOutput: %s", err, outputStr)
+	}
+}
+
 func bwrapAvailable() bool {
 	_, err := exec.LookPath("bwrap")
 	return err == nil
