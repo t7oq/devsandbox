@@ -327,7 +327,7 @@ Status filters support:
 			}
 
 			if follow {
-				return followProxyLogs(logDir, filter, jsonOutput, compact, noColor)
+				return followProxyLogs(logDir, filter, jsonOutput, showBody, compact, noColor)
 			}
 
 			return viewProxyLogs(logDir, filter, last, jsonOutput, showBody, compact, noColor, stats)
@@ -440,7 +440,7 @@ func viewProxyLogs(logDir string, filter *ProxyLogFilter, last int, jsonOutput, 
 	return nil
 }
 
-func followProxyLogs(logDir string, filter *ProxyLogFilter, jsonOutput, compact, noColor bool) error {
+func followProxyLogs(logDir string, filter *ProxyLogFilter, jsonOutput, showBody, compact, noColor bool) error {
 	// Set up signal handling for graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -454,12 +454,17 @@ func followProxyLogs(logDir string, filter *ProxyLogFilter, jsonOutput, compact,
 			return
 		}
 		if jsonOutput {
-			data, _ := json.Marshal(e)
+			out := *e
+			if !showBody {
+				out.RequestBody = nil
+				out.ResponseBody = nil
+			}
+			data, _ := json.Marshal(out)
 			fmt.Println(string(data))
 		} else if compact {
 			printProxyLogCompactLine(e, noColor)
 		} else {
-			printProxyLogLine(e, noColor)
+			printProxyLogLine(e, showBody, noColor)
 		}
 	}
 
@@ -798,7 +803,7 @@ func printProxyLogCompactLine(e *proxy.RequestLog, noColor bool) {
 	)
 }
 
-func printProxyLogLine(e *proxy.RequestLog, noColor bool) {
+func printProxyLogLine(e *proxy.RequestLog, showBody, noColor bool) {
 	status := fmt.Sprintf("%d", e.StatusCode)
 	if e.Error != "" {
 		status = "ERR"
@@ -820,6 +825,15 @@ func printProxyLogLine(e *proxy.RequestLog, noColor bool) {
 		duration,
 		e.URL,
 	)
+
+	if showBody {
+		if len(e.RequestBody) > 0 {
+			fmt.Printf("  → REQ: %s\n", truncateLogBody(e.RequestBody, 200))
+		}
+		if len(e.ResponseBody) > 0 {
+			fmt.Printf("  ← RSP: %s\n", truncateLogBody(e.ResponseBody, 200))
+		}
+	}
 }
 
 func colorizeStatus(status string, code int, errMsg string) string {
