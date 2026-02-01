@@ -69,8 +69,13 @@ func TestSandbox_Version(t *testing.T) {
 		t.Fatalf("--version failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(string(output), "v1.0.0") {
-		t.Errorf("--version output missing version: %s", output)
+	outputStr := string(output)
+	// Check for version format: "devsandbox X.Y.Z (commit[-dirty:hash]) (built: date)"
+	if !strings.Contains(outputStr, "devsandbox") {
+		t.Errorf("--version output missing 'devsandbox': %s", output)
+	}
+	if !strings.Contains(outputStr, "(built:") {
+		t.Errorf("--version output missing build date: %s", output)
 	}
 }
 
