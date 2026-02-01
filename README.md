@@ -35,6 +35,9 @@ sudo apt install bubblewrap
 
 # Fedora
 sudo dnf install bubblewrap
+
+# Mise
+mise install github:zekker6/devsandbox
 ```
 
 **Build from source:**
@@ -56,6 +59,9 @@ devsandbox bun run dev
 
 # Run AI coding assistant with reduced risk
 devsandbox claude --dangerously-skip-permissions
+
+# Using mise-managed tools inside sandbox
+mise exec "github:zekker6/devsandbox@latest" -- claude --dangerously-skip-permissions
 
 # Show sandbox configuration
 devsandbox --info
