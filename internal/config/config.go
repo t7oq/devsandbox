@@ -2,10 +2,21 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
+)
+
+const (
+	// MinPort is the minimum valid port number.
+	MinPort = 1
+	// MaxPort is the maximum valid port number.
+	MaxPort = 65535
+	// MaxAskTimeout is the maximum ask timeout in seconds (10 minutes).
+	MaxAskTimeout = 600
 )
 
 // Config represents the devsandbox configuration file.
@@ -225,7 +236,73 @@ func LoadFrom(path string) (*Config, error) {
 		cfg.Sandbox.BasePath = expandHome(cfg.Sandbox.BasePath)
 	}
 
+	// Validate configuration values
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	return cfg, nil
+}
+
+// Validate checks configuration values for security and correctness.
+func (c *Config) Validate() error {
+	// Validate proxy port
+	if c.Proxy.Port != 0 {
+		if c.Proxy.Port < MinPort || c.Proxy.Port > MaxPort {
+			return fmt.Errorf("proxy.port must be between %d and %d, got %d", MinPort, MaxPort, c.Proxy.Port)
+		}
+	}
+
+	// Validate ask timeout (must be positive if set)
+	if c.Proxy.Filter.AskTimeout < 0 {
+		return fmt.Errorf("proxy.filter.ask_timeout cannot be negative, got %d", c.Proxy.Filter.AskTimeout)
+	}
+	if c.Proxy.Filter.AskTimeout > MaxAskTimeout {
+		return fmt.Errorf("proxy.filter.ask_timeout cannot exceed %d seconds, got %d", MaxAskTimeout, c.Proxy.Filter.AskTimeout)
+	}
+
+	// Validate base path (no path traversal)
+	if c.Sandbox.BasePath != "" {
+		if err := validatePath(c.Sandbox.BasePath); err != nil {
+			return fmt.Errorf("sandbox.base_path: %w", err)
+		}
+	}
+
+	// Validate filter rules
+	validActions := map[string]bool{"allow": true, "block": true, "ask": true, "": true}
+	if c.Proxy.Filter.DefaultAction != "" && !validActions[c.Proxy.Filter.DefaultAction] {
+		return fmt.Errorf("proxy.filter.default_action must be 'allow', 'block', or 'ask', got %q", c.Proxy.Filter.DefaultAction)
+	}
+
+	for i, rule := range c.Proxy.Filter.Rules {
+		if rule.Pattern == "" {
+			return fmt.Errorf("proxy.filter.rules[%d].pattern cannot be empty", i)
+		}
+		if rule.Action != "" && !validActions[rule.Action] {
+			return fmt.Errorf("proxy.filter.rules[%d].action must be 'allow', 'block', or 'ask', got %q", i, rule.Action)
+		}
+	}
+
+	return nil
+}
+
+// validatePath checks a path for security issues like path traversal.
+func validatePath(path string) error {
+	// Check for path traversal attempts in original path
+	// We check before cleaning because Clean() resolves ".." which hides the attempt
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path contains traversal sequence: %q", path)
+	}
+
+	// Clean the path
+	cleaned := filepath.Clean(path)
+
+	// Path must be absolute
+	if !filepath.IsAbs(cleaned) {
+		return fmt.Errorf("path must be absolute: %q", path)
+	}
+
+	return nil
 }
 
 // expandHome expands ~ to the user's home directory.

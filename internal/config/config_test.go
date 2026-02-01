@@ -1,0 +1,408 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Proxy.Enabled {
+		t.Error("expected proxy to be disabled by default")
+	}
+	if cfg.Proxy.Port != 8080 {
+		t.Errorf("expected default proxy port 8080, got %d", cfg.Proxy.Port)
+	}
+	if cfg.Sandbox.BasePath != "" {
+		t.Error("expected empty base path by default")
+	}
+	if !cfg.Overlay.IsEnabled() {
+		t.Error("expected overlay to be enabled by default")
+	}
+}
+
+func TestOverlayIsEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		enabled  *bool
+		expected bool
+	}{
+		{"nil defaults to true", nil, true},
+		{"explicit true", boolPtr(true), true},
+		{"explicit false", boolPtr(false), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oc := OverlayConfig{Enabled: tt.enabled}
+			if got := oc.IsEnabled(); got != tt.expected {
+				t.Errorf("IsEnabled() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func TestLoadFromNonExistent(t *testing.T) {
+	cfg, err := LoadFrom("/nonexistent/path/config.toml")
+	if err != nil {
+		t.Fatalf("unexpected error for non-existent file: %v", err)
+	}
+
+	// Should return default config
+	if cfg.Proxy.Enabled {
+		t.Error("expected default config with proxy disabled")
+	}
+}
+
+func TestLoadFromValidFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.toml")
+
+	content := `
+[proxy]
+enabled = true
+port = 9090
+
+[sandbox]
+base_path = "~/sandbox"
+
+[overlay]
+enabled = false
+
+[tools.git]
+mode = "readwrite"
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := LoadFrom(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	if !cfg.Proxy.Enabled {
+		t.Error("expected proxy to be enabled")
+	}
+	if cfg.Proxy.Port != 9090 {
+		t.Errorf("expected port 9090, got %d", cfg.Proxy.Port)
+	}
+	if cfg.Overlay.IsEnabled() {
+		t.Error("expected overlay to be disabled (explicit false in config)")
+	}
+
+	// Check tool config
+	gitCfg := cfg.GetToolConfig("git")
+	if gitCfg == nil {
+		t.Fatal("expected git config")
+	}
+	if mode, ok := gitCfg["mode"].(string); !ok || mode != "readwrite" {
+		t.Errorf("expected git mode 'readwrite', got %v", gitCfg["mode"])
+	}
+}
+
+func TestLoadFromEmptyPath(t *testing.T) {
+	cfg, err := LoadFrom("")
+	if err != nil {
+		t.Fatalf("unexpected error for empty path: %v", err)
+	}
+
+	// Should return default config
+	if cfg.Proxy.Enabled {
+		t.Error("expected default config")
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot get home dir")
+	}
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"~", home},
+		{"~/foo", filepath.Join(home, "foo")},
+		{"~foo", "~foo"}, // Not expanded (no slash)
+		{"/absolute", "/absolute"},
+		{"relative", "relative"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := expandHome(tt.input)
+			if got != tt.expected {
+				t.Errorf("expandHome(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetToolConfig(t *testing.T) {
+	cfg := &Config{
+		Tools: map[string]any{
+			"git": map[string]any{
+				"mode": "readonly",
+			},
+			"invalid": "not a map",
+		},
+	}
+
+	// Valid tool config
+	gitCfg := cfg.GetToolConfig("git")
+	if gitCfg == nil {
+		t.Error("expected git config")
+	}
+	if mode := gitCfg["mode"]; mode != "readonly" {
+		t.Errorf("expected mode 'readonly', got %v", mode)
+	}
+
+	// Non-existent tool
+	if cfg.GetToolConfig("nonexistent") != nil {
+		t.Error("expected nil for non-existent tool")
+	}
+
+	// Invalid type (not a map)
+	if cfg.GetToolConfig("invalid") != nil {
+		t.Error("expected nil for invalid tool config type")
+	}
+
+	// Nil tools map
+	nilCfg := &Config{}
+	if nilCfg.GetToolConfig("git") != nil {
+		t.Error("expected nil for nil tools map")
+	}
+}
+
+func TestLoadFromInvalidTOML(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.toml")
+
+	// Invalid TOML content
+	if err := os.WriteFile(configPath, []byte("invalid = [unclosed"), 0o644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	_, err := LoadFrom(configPath)
+	if err == nil {
+		t.Error("expected error for invalid TOML")
+	}
+}
+
+func TestGenerateDefault(t *testing.T) {
+	output := GenerateDefault()
+	if len(output) == 0 {
+		t.Error("expected non-empty default config")
+	}
+	if !contains(output, "[proxy]") {
+		t.Error("expected [proxy] section in default config")
+	}
+	if !contains(output, "[sandbox]") {
+		t.Error("expected [sandbox] section in default config")
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid default config",
+			cfg:     DefaultConfig(),
+			wantErr: false,
+		},
+		{
+			name: "invalid port too low",
+			cfg: &Config{
+				Proxy: ProxyConfig{Port: 0},
+			},
+			wantErr: false, // 0 is allowed (means use default)
+		},
+		{
+			name: "invalid port negative",
+			cfg: &Config{
+				Proxy: ProxyConfig{Port: -1},
+			},
+			wantErr: true,
+			errMsg:  "proxy.port must be between",
+		},
+		{
+			name: "invalid port too high",
+			cfg: &Config{
+				Proxy: ProxyConfig{Port: 70000},
+			},
+			wantErr: true,
+			errMsg:  "proxy.port must be between",
+		},
+		{
+			name: "valid port",
+			cfg: &Config{
+				Proxy: ProxyConfig{Port: 8080},
+			},
+			wantErr: false,
+		},
+		{
+			name: "negative ask timeout",
+			cfg: &Config{
+				Proxy: ProxyConfig{
+					Filter: ProxyFilterConfig{AskTimeout: -1},
+				},
+			},
+			wantErr: true,
+			errMsg:  "ask_timeout cannot be negative",
+		},
+		{
+			name: "ask timeout too high",
+			cfg: &Config{
+				Proxy: ProxyConfig{
+					Filter: ProxyFilterConfig{AskTimeout: 1000},
+				},
+			},
+			wantErr: true,
+			errMsg:  "ask_timeout cannot exceed",
+		},
+		{
+			name: "path traversal in base path",
+			cfg: &Config{
+				Sandbox: SandboxConfig{BasePath: "/home/user/../../../etc/passwd"},
+			},
+			wantErr: true,
+			errMsg:  "path contains traversal",
+		},
+		{
+			name: "relative base path",
+			cfg: &Config{
+				Sandbox: SandboxConfig{BasePath: "relative/path"},
+			},
+			wantErr: true,
+			errMsg:  "path must be absolute",
+		},
+		{
+			name: "valid absolute base path",
+			cfg: &Config{
+				Sandbox: SandboxConfig{BasePath: "/home/user/.local/share/devsandbox"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid filter action",
+			cfg: &Config{
+				Proxy: ProxyConfig{
+					Filter: ProxyFilterConfig{DefaultAction: "invalid"},
+				},
+			},
+			wantErr: true,
+			errMsg:  "default_action must be",
+		},
+		{
+			name: "valid filter actions",
+			cfg: &Config{
+				Proxy: ProxyConfig{
+					Filter: ProxyFilterConfig{
+						DefaultAction: "block",
+						Rules: []ProxyFilterRule{
+							{Pattern: "*.example.com", Action: "allow"},
+							{Pattern: "bad.com", Action: "block"},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty rule pattern",
+			cfg: &Config{
+				Proxy: ProxyConfig{
+					Filter: ProxyFilterConfig{
+						Rules: []ProxyFilterRule{
+							{Pattern: "", Action: "allow"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "pattern cannot be empty",
+		},
+		{
+			name: "invalid rule action",
+			cfg: &Config{
+				Proxy: ProxyConfig{
+					Filter: ProxyFilterConfig{
+						Rules: []ProxyFilterRule{
+							{Pattern: "*.com", Action: "invalid"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "action must be",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidatePath(t *testing.T) {
+	tests := []struct {
+		path    string
+		wantErr bool
+	}{
+		{"/absolute/path", false},
+		{"/home/user/.config", false},
+		{"relative/path", true},
+		{"/path/with/../traversal", true},
+		{"/normal/path", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			err := validatePath(tt.path)
+			if tt.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
+}
+
+func containsAt(s, substr string, start int) bool {
+	for i := start; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
