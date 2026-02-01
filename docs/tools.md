@@ -113,7 +113,8 @@ Summary: 3/4 tools available
 
 ## Tool Management with mise
 
-[mise](https://mise.jdx.dev/) is the recommended (but optional) tool manager. If installed, all mise-managed tools are automatically available inside the sandbox.
+[mise](https://mise.jdx.dev/) is the recommended (but optional) tool manager. If installed, all mise-managed tools are
+automatically available inside the sandbox.
 
 ### How It Works
 
@@ -153,12 +154,12 @@ See [sandboxing.md](sandboxing.md#overlay-filesystem) for more details on overla
 
 Any tool installable via mise works inside the sandbox:
 
-| Category         | Examples                              |
-|------------------|---------------------------------------|
-| Languages        | Node.js, Python, Go, Rust, Ruby, Java |
-| Package Managers | npm, pnpm, yarn, pip, cargo           |
-| Build Tools      | make, cmake, ninja                    |
-| Utilities        | jq, yq, gh, aws-cli                   |
+| Category         | Examples                                |
+|------------------|-----------------------------------------|
+| Languages        | Node.js, Python, Go, Rust, Ruby, Java   |
+| Package Managers | npm, pnpm, yarn, pip, cargo, uv, poetry |
+| Build Tools      | make, cmake, ninja                      |
+| Utilities        | jq, yq, gh, aws-cli                     |
 
 ### Installing Tools
 
@@ -228,7 +229,8 @@ You can use these in custom prompt configurations.
 
 ### Powerlevel10k
 
-[Powerlevel10k](https://github.com/romkatv/powerlevel10k) is configured with a custom `devsandbox` segment that shows when `$DEVSANDBOX` is set.
+[Powerlevel10k](https://github.com/romkatv/powerlevel10k) is configured with a custom `devsandbox` segment that shows
+when `$DEVSANDBOX` is set.
 
 ### Oh My Zsh
 
@@ -236,11 +238,13 @@ You can use these in custom prompt configurations.
 
 ### Oh My Posh
 
-[Oh My Posh](https://ohmyposh.dev/) configurations are mounted. You can add a custom segment using the `$DEVSANDBOX` environment variable.
+[Oh My Posh](https://ohmyposh.dev/) configurations are mounted. You can add a custom segment using the `$DEVSANDBOX`
+environment variable.
 
 ### tmux
 
-[tmux](https://github.com/tmux/tmux) is configured to show `[SANDBOX]` in the status bar with a red background when running inside the sandbox.
+[tmux](https://github.com/tmux/tmux) is configured to show `[SANDBOX]` in the status bar with a red background when
+running inside the sandbox.
 
 ## Editor Support
 
