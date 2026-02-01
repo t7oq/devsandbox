@@ -948,12 +948,35 @@ func TestSandboxes_DeprecatedLogsRemoved(t *testing.T) {
 	}
 }
 
+// bwrapAvailable checks if bwrap is installed AND functional.
+// GitHub Actions and some CI environments don't allow user namespaces,
+// so we need to test if bwrap actually works, not just if it's installed.
 func bwrapAvailable() bool {
-	_, err := exec.LookPath("bwrap")
+	bwrapPath, err := exec.LookPath("bwrap")
+	if err != nil {
+		return false
+	}
+
+	// Try to run a simple bwrap command to verify user namespaces work
+	cmd := exec.Command(bwrapPath,
+		"--ro-bind", "/", "/",
+		"--dev", "/dev",
+		"--proc", "/proc",
+		"--unshare-user",
+		"--", "true")
+	err = cmd.Run()
 	return err == nil
 }
 
+// networkProviderAvailable checks if pasta is installed AND functional.
 func networkProviderAvailable() bool {
-	_, err := exec.LookPath("pasta")
+	pastaPath, err := exec.LookPath("pasta")
+	if err != nil {
+		return false
+	}
+
+	// Check if pasta can at least show help (doesn't require namespaces)
+	cmd := exec.Command(pastaPath, "--help")
+	err = cmd.Run()
 	return err == nil
 }

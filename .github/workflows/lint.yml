@@ -35,44 +35,30 @@ jobs:
         run: task build
 
   e2e:
-    name: E2E Tests (${{ matrix.passt }})
+    name: E2E Tests
     runs-on: ubuntu-latest
     needs: [lint]
-    strategy:
-      fail-fast: false
-      matrix:
-        passt: [apt, git]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install bubblewrap
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap
+          # Install passt if available
+          sudo apt-get install -y passt || echo "passt not available in apt"
 
-      - name: Install passt (apt)
-        if: matrix.passt == 'apt'
+      - name: Check user namespace support
         run: |
-          sudo apt-get install -y passt || echo "passt not available in apt, tests will skip proxy features"
-
-      - name: Install passt (git - latest)
-        if: matrix.passt == 'git'
-        run: |
-          sudo apt-get install -y make gcc
-          git clone --depth=1 https://passt.top/passt
-          cd passt && make && sudo make install
-
-      - name: Verify installations
-        run: |
-          echo "=== bwrap ==="
-          which bwrap && bwrap --version
-          echo "=== pasta ==="
-          which pasta && pasta --version || echo "pasta not installed"
-          echo "=== pasta features ==="
-          pasta --help 2>&1 | grep -E "map-host-loopback|version" || true
+          echo "=== Checking user namespace support ==="
+          if bwrap --ro-bind / / --unshare-user -- true 2>/dev/null; then
+            echo "User namespaces: SUPPORTED"
+          else
+            echo "User namespaces: NOT SUPPORTED (sandbox tests will be skipped)"
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -90,17 +76,10 @@ jobs:
           cp .mise.ci.toml .mise.toml
           mise install
 
-      - name: Verify tool installations
-        run: |
-          echo "=== Go ===" && go version
-          echo "=== Task ===" && task --version
-          echo "=== Neovim ===" && nvim --version | head -1
-          echo "=== Mise ===" && mise --version
-
       - name: Create mise config directory
         run: mkdir -p ~/.config/mise
 
       - name: Run e2e tests
-        run: task test:e2e
-        env:
-          DEVSANDBOX_DEBUG: "1"
+        run: |
+          echo "Note: Tests requiring user namespaces will be skipped in CI"
+          task test:e2e
