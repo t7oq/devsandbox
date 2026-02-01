@@ -8,23 +8,23 @@ untrusted code.
 | Resource                          | Access                              |
 |-----------------------------------|-------------------------------------|
 | Project directory                 | Read/Write                          |
-| `.env` files                      | Blocked (overlaid with /dev/null)   |
-| `~/.ssh`                          | Blocked                             |
-| `~/.gitconfig`                    | Sanitized (no credentials)          |
-| `~/.aws`, `~/.azure`, `~/.gcloud` | Blocked                             |
+| `.env` files                      | Hidden (overlaid with /dev/null)    |
+| `~/.ssh`                          | Not mounted (configurable)          |
+| `~/.gitconfig`                    | Sanitized copy (configurable)       |
+| `~/.aws`, `~/.azure`, `~/.gcloud` | Not mounted                         |
 | mise-managed tools                | Read-only or overlay                |
 | Network (default)                 | Full access                         |
 | Network (proxy mode)              | Isolated, routed through MITM proxy |
 
-### What's Blocked
+### What's Not Available (by default)
 
-**SSH Keys** - The `~/.ssh` directory is not mounted, preventing:
+**SSH Keys** - The `~/.ssh` directory is not mounted by default:
 
-- SSH authentication to remote servers
-- Git operations over SSH (use HTTPS instead)
-- Any SSH-based tooling
+- SSH authentication requires `git.mode = "readwrite"` (see [configuration](configuration.md))
+- Use HTTPS for git operations in default mode
+- SSH agent forwarding is available in readwrite mode
 
-**Cloud Credentials** - These directories are blocked:
+**Cloud Credentials** - These directories are not mounted:
 
 - `~/.aws` (AWS CLI credentials)
 - `~/.azure` (Azure CLI credentials)
@@ -32,13 +32,14 @@ untrusted code.
 - `~/.config/gcloud` (Google Cloud config)
 
 **Environment Files** - All `.env` and `.env.*` files in your project are overlaid with `/dev/null`, preventing secrets
-from being read.
+from being read by sandboxed code.
 
-**Git Credentials** - The `~/.gitconfig` file is sanitized to remove credential helpers and tokens.
+**Git Credentials** - By default, `~/.gitconfig` is replaced with a sanitized copy containing only user.name and email.
+Use `git.mode = "readwrite"` for full git access.
 
-### What's Allowed
+### What's Available
 
-**Project Directory** - Full read/write access to the current directory and all subdirectories (except blocked files).
+**Project Directory** - Full read/write access to the current directory and all subdirectories (except `.env` files).
 
 **Development Tools** - All tools managed by [mise](https://mise.jdx.dev/) are available read-only:
 

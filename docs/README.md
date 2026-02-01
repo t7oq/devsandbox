@@ -14,7 +14,7 @@ Detailed documentation for devsandbox.
 
 | Topic                                               | Description                       |
 |-----------------------------------------------------|-----------------------------------|
-| [Security Model](sandboxing.md#security-model)      | What's blocked and what's allowed |
+| [Security Model](sandboxing.md#security-model)      | What's available and what's not   |
 | [Proxy Mode Setup](proxy.md#enabling-proxy-mode)    | Enable traffic inspection         |
 | [Viewing Logs](proxy.md#viewing-logs)               | Inspect captured HTTP traffic     |
 | [Remote Logging](configuration.md#remote-logging)   | Send logs to syslog or OTLP       |

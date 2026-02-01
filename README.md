@@ -1,6 +1,6 @@
 # devsandbox
 
-A secure sandbox for running untrusted development tools. Uses [bubblewrap](https://github.com/containers/bubblewrap)
+A sandbox for running untrusted development tools. Uses [bubblewrap](https://github.com/containers/bubblewrap)
 for filesystem isolation and [pasta](https://passt.top/) for network isolation.
 
 ## Why?
@@ -11,10 +11,10 @@ permissions.
 
 `devsandbox` provides a security boundary that:
 
+- Preserves access to your development tools
 - Allows full read/write access to your project directory
-- Blocks access to SSH keys, cloud credentials, and secrets
+- Keeps SSH keys, cloud credentials, and secrets out of reach
 - Optionally routes all network traffic through an inspectable proxy
-- Preserves access to your development tools (via mise)
 
 ## Quick Start
 
@@ -81,15 +81,15 @@ devsandbox logs proxy -f
 
 ## Security Model
 
-| Resource                          | Access           |
-|-----------------------------------|------------------|
-| Project directory                 | Read/Write       |
-| `.env` files                      | Blocked          |
-| `~/.ssh`                          | Blocked          |
-| `~/.aws`, `~/.azure`, `~/.gcloud` | Blocked          |
-| mise-managed tools                | Read-only        |
-| Network (default)                 | Full access      |
-| Network (proxy mode)              | Isolated, logged |
+| Resource                          | Access                     |
+|-----------------------------------|----------------------------|
+| Project directory                 | Read/Write                 |
+| `.env` files                      | Hidden                     |
+| `~/.ssh`                          | Not mounted (configurable) |
+| `~/.aws`, `~/.azure`, `~/.gcloud` | Not mounted                |
+| mise-managed tools                | Read-only (configurable)   |
+| Network (default)                 | Full access                |
+| Network (proxy mode)              | Isolated, logged           |
 
 ## Documentation
 

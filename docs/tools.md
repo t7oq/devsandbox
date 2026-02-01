@@ -413,7 +413,7 @@ devsandbox source .venv/bin/activate
 
 ## Docker
 
-**Not supported** - Docker requires privileged access that the sandbox blocks.
+**Not supported** - Docker requires privileged access not available inside the sandbox.
 
 For container workflows, consider:
 

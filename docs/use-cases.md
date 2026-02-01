@@ -21,9 +21,9 @@ devsandbox --proxy claude --dangerously-skip-permissions
 
 **What's protected:**
 
-- SSH keys cannot be exfiltrated
-- Cloud credentials are inaccessible
-- `.env` secrets are blocked
+- SSH keys are not available (by default)
+- Cloud credentials are not mounted
+- `.env` secrets are hidden
 - Network activity can be monitored (proxy mode)
 
 **What Claude can do:**
