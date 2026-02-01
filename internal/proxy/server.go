@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/elazarl/goproxy"
 
@@ -22,16 +24,20 @@ const (
 )
 
 type Server struct {
-	config      *Config
-	ca          *CA
-	proxy       *goproxy.ProxyHttpServer
-	listener    net.Listener
-	server      *http.Server
-	reqLogger   *RequestLogger
-	proxyLogger *RotatingFileWriter
-	wg          sync.WaitGroup
-	mu          sync.Mutex
-	running     bool
+	config       *Config
+	ca           *CA
+	proxy        *goproxy.ProxyHttpServer
+	listener     net.Listener
+	server       *http.Server
+	reqLogger    *RequestLogger
+	proxyLogger  *RotatingFileWriter
+	filterEngine *FilterEngine
+	askServer    *AskServer
+	askQueue     *AskQueue
+	wg           sync.WaitGroup
+	mu           sync.Mutex
+	running      bool
+	requestID    uint64
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -75,12 +81,47 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to create request logger: %w", err)
 	}
 
+	// Create filter engine if configured
+	var filterEngine *FilterEngine
+	if cfg.Filter != nil && cfg.Filter.IsEnabled() {
+		filterEngine, err = NewFilterEngine(cfg.Filter)
+		if err != nil {
+			_ = proxyLogger.Close()
+			_ = reqLogger.Close()
+			if dispatcher != nil {
+				_ = dispatcher.Close()
+			}
+			return nil, fmt.Errorf("failed to create filter engine: %w", err)
+		}
+	}
+
+	// Set up ask mode if configured (default_action = ask)
+	var askServer *AskServer
+	var askQueue *AskQueue
+	if cfg.Filter != nil && cfg.Filter.DefaultAction == FilterActionAsk {
+		askServer, err = NewAskServer(cfg.LogDir)
+		if err != nil {
+			_ = proxyLogger.Close()
+			_ = reqLogger.Close()
+			if dispatcher != nil {
+				_ = dispatcher.Close()
+			}
+			return nil, fmt.Errorf("failed to create ask server: %w", err)
+		}
+
+		timeout := time.Duration(cfg.Filter.GetAskTimeout()) * time.Second
+		askQueue = NewAskQueue(askServer, filterEngine, timeout)
+	}
+
 	s := &Server{
-		config:      cfg,
-		ca:          ca,
-		proxy:       proxy,
-		reqLogger:   reqLogger,
-		proxyLogger: proxyLogger,
+		config:       cfg,
+		ca:           ca,
+		proxy:        proxy,
+		reqLogger:    reqLogger,
+		proxyLogger:  proxyLogger,
+		filterEngine: filterEngine,
+		askServer:    askServer,
+		askQueue:     askQueue,
 	}
 
 	s.setupMITM()
@@ -108,11 +149,65 @@ func (s *Server) setupMITM() {
 }
 
 func (s *Server) setupLogging() {
-	// Set up request logging for persistence to files
+	// Set up request logging and filtering
 	s.proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 		// Capture request for logging
-		entry, _ := s.reqLogger.LogRequest(req)
+		entry, reqBody := s.reqLogger.LogRequest(req)
 		ctx.UserData = entry
+		if s.filterEngine == nil || !s.filterEngine.IsEnabled() {
+			return req, nil
+		}
+		decision := s.filterEngine.Match(req)
+
+		// Log the filter decision
+		if entry != nil {
+			entry.FilterAction = string(decision.Action)
+			entry.FilterReason = decision.Reason
+		}
+
+		switch decision.Action {
+		case FilterActionBlock:
+			// Block the request
+			resp := BlockResponse(req, decision.Reason)
+			// Log as blocked
+			if entry != nil {
+				s.reqLogger.LogResponse(entry, resp, entry.Timestamp)
+				_ = s.reqLogger.Log(entry)
+			}
+			return nil, resp
+
+		case FilterActionAsk:
+			// Handle ask mode
+			if s.askQueue != nil {
+				action := s.handleAskMode(req, entry, reqBody)
+				if action == FilterActionBlock {
+					resp := BlockResponse(req, "blocked by user")
+					if entry != nil {
+						entry.FilterAction = string(FilterActionBlock)
+						entry.FilterReason = "blocked by user decision"
+						s.reqLogger.LogResponse(entry, resp, entry.Timestamp)
+						_ = s.reqLogger.Log(entry)
+					}
+					return nil, resp
+				}
+				// User allowed - continue with request
+				if entry != nil {
+					entry.FilterAction = string(FilterActionAllow)
+					entry.FilterReason = "allowed by user decision"
+				}
+			} else {
+				// No ask queue configured, use default action
+				defaultAction := s.filterEngine.Config().GetDefaultAction()
+				if defaultAction == FilterActionBlock {
+					resp := BlockResponse(req, "ask mode not available, using default block")
+					if entry != nil {
+						s.reqLogger.LogResponse(entry, resp, entry.Timestamp)
+						_ = s.reqLogger.Log(entry)
+					}
+					return nil, resp
+				}
+			}
+		}
 
 		return req, nil
 	})
@@ -210,6 +305,14 @@ func (s *Server) Stop() error {
 
 	s.wg.Wait()
 
+	// Close ask mode resources
+	if s.askQueue != nil {
+		_ = s.askQueue.Close()
+	}
+	if s.askServer != nil {
+		_ = s.askServer.Close()
+	}
+
 	// Close loggers to flush remaining data
 	if s.reqLogger != nil {
 		_ = s.reqLogger.Close()
@@ -219,6 +322,77 @@ func (s *Server) Stop() error {
 	}
 
 	return nil
+}
+
+// handleAskMode prompts the user for a decision on the request.
+// Returns the filter action and logs unanswered requests to internal logs.
+func (s *Server) handleAskMode(req *http.Request, entry *RequestLog, reqBody []byte) FilterAction {
+	// Generate unique request ID
+	id := atomic.AddUint64(&s.requestID, 1)
+
+	// Build ask request
+	askReq := &AskRequest{
+		ID:     fmt.Sprintf("%d", id),
+		Method: req.Method,
+		URL:    req.URL.String(),
+		Host:   req.Host,
+		Path:   req.URL.Path,
+	}
+
+	// Add selected headers
+	if req.Header != nil {
+		askReq.Headers = make(map[string]string)
+		for _, h := range []string{"Content-Type", "Authorization", "User-Agent"} {
+			if v := req.Header.Get(h); v != "" {
+				// Redact sensitive headers
+				if h == "Authorization" {
+					askReq.Headers[h] = "[REDACTED]"
+				} else {
+					askReq.Headers[h] = v
+				}
+			}
+		}
+	}
+
+	// Add body preview (first 200 bytes)
+	if len(reqBody) > 0 {
+		preview := string(reqBody)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		askReq.Body = preview
+	}
+
+	// Request approval from user
+	action, err := s.askQueue.RequestApproval(askReq)
+	if err != nil {
+		// Log unanswered request to internal logs
+		var reason string
+		if errors.Is(err, ErrNoMonitor) {
+			reason = "no monitor connected"
+		} else if errors.Is(err, ErrTimeout) {
+			reason = "request timed out (30s) waiting for user response"
+		} else {
+			reason = err.Error()
+		}
+
+		// Log to internal proxy logs
+		s.proxy.Logger.Printf("UNANSWERED: %s %s - %s (rejected)", req.Method, req.URL.String(), reason)
+
+		// Update entry with rejection reason
+		if entry != nil {
+			entry.FilterReason = fmt.Sprintf("unanswered: %s", reason)
+		}
+
+		return FilterActionBlock
+	}
+
+	return action
+}
+
+// AskServer returns the ask server if ask mode is enabled.
+func (s *Server) AskServer() *AskServer {
+	return s.askServer
 }
 
 func (s *Server) Addr() string {

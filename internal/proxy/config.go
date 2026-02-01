@@ -32,6 +32,9 @@ type Config struct {
 
 	// LogAttributes are custom attributes added to all log entries.
 	LogAttributes map[string]string
+
+	// Filter contains HTTP request filtering configuration.
+	Filter *FilterConfig
 }
 
 func NewConfig(sandboxBase string, port int) *Config {
@@ -46,11 +49,6 @@ func NewConfig(sandboxBase string, port int) *Config {
 		LogDir:         filepath.Join(logBase, ProxyLogDirName),
 		InternalLogDir: filepath.Join(logBase, InternalLogDirName),
 	}
-}
-
-func DefaultConfig(homeDir string) *Config {
-	sandboxBase := filepath.Join(homeDir, ".local", "share", "devsandbox")
-	return NewConfig(sandboxBase, DefaultProxyPort)
 }
 
 func (c *Config) EnsureCADir() error {

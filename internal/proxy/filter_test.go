@@ -1,0 +1,363 @@
+package proxy
+
+import (
+	"net/http"
+	"net/url"
+	"regexp"
+	"testing"
+)
+
+func TestFilterEngine_GlobPattern(t *testing.T) {
+	cfg := &FilterConfig{
+		DefaultAction: FilterActionBlock, // whitelist behavior
+		Rules: []FilterRule{
+			{Pattern: "*.github.com", Action: FilterActionAllow, Scope: FilterScopeHost},
+			{Pattern: "api.anthropic.com", Action: FilterActionAllow, Scope: FilterScopeHost},
+		},
+	}
+
+	engine, err := NewFilterEngine(cfg)
+	if err != nil {
+		t.Fatalf("failed to create filter engine: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		host     string
+		expected FilterAction
+	}{
+		{"exact match", "api.anthropic.com", FilterActionAllow},
+		{"glob match", "api.github.com", FilterActionAllow},
+		{"glob match subdomain", "raw.github.com", FilterActionAllow},
+		{"not matched", "example.com", FilterActionBlock}, // whitelist default
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &http.Request{
+				Host: tt.host,
+				URL:  &url.URL{Host: tt.host, Path: "/"},
+			}
+			decision := engine.Match(req)
+			if decision.Action != tt.expected {
+				t.Errorf("got action %s, want %s", decision.Action, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilterEngine_RegexPattern(t *testing.T) {
+	cfg := &FilterConfig{
+		DefaultAction: FilterActionBlock, // whitelist behavior
+		Rules: []FilterRule{
+			{Pattern: `^api\.(dev|staging)\.example\.com$`, Action: FilterActionAllow, Scope: FilterScopeHost, Type: PatternTypeRegex},
+		},
+	}
+
+	engine, err := NewFilterEngine(cfg)
+	if err != nil {
+		t.Fatalf("failed to create filter engine: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		host     string
+		expected FilterAction
+	}{
+		{"dev match", "api.dev.example.com", FilterActionAllow},
+		{"staging match", "api.staging.example.com", FilterActionAllow},
+		{"prod no match", "api.prod.example.com", FilterActionBlock},
+		{"base no match", "api.example.com", FilterActionBlock},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &http.Request{
+				Host: tt.host,
+				URL:  &url.URL{Host: tt.host, Path: "/"},
+			}
+			decision := engine.Match(req)
+			if decision.Action != tt.expected {
+				t.Errorf("got action %s, want %s", decision.Action, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilterEngine_BlacklistMode(t *testing.T) {
+	cfg := &FilterConfig{
+		DefaultAction: FilterActionAllow, // blacklist behavior
+		Rules: []FilterRule{
+			{Pattern: "*.tracking.io", Action: FilterActionBlock, Scope: FilterScopeHost},
+			{Pattern: "ads.example.com", Action: FilterActionBlock, Scope: FilterScopeHost},
+		},
+	}
+
+	engine, err := NewFilterEngine(cfg)
+	if err != nil {
+		t.Fatalf("failed to create filter engine: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		host     string
+		expected FilterAction
+	}{
+		{"blocked glob", "metrics.tracking.io", FilterActionBlock},
+		{"blocked exact", "ads.example.com", FilterActionBlock},
+		{"allowed", "api.example.com", FilterActionAllow}, // blacklist default
+		{"allowed other", "github.com", FilterActionAllow},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &http.Request{
+				Host: tt.host,
+				URL:  &url.URL{Host: tt.host, Path: "/"},
+			}
+			decision := engine.Match(req)
+			if decision.Action != tt.expected {
+				t.Errorf("got action %s, want %s", decision.Action, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilterEngine_PathScope(t *testing.T) {
+	cfg := &FilterConfig{
+		DefaultAction: FilterActionAllow, // blacklist behavior
+		Rules: []FilterRule{
+			{Pattern: "/api/admin/*", Action: FilterActionBlock, Scope: FilterScopePath},
+			{Pattern: "/debug/*", Action: FilterActionBlock, Scope: FilterScopePath},
+		},
+	}
+
+	engine, err := NewFilterEngine(cfg)
+	if err != nil {
+		t.Fatalf("failed to create filter engine: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		path     string
+		expected FilterAction
+	}{
+		{"blocked admin", "/api/admin/users", FilterActionBlock},
+		{"blocked debug", "/debug/pprof", FilterActionBlock},
+		{"allowed api", "/api/v1/users", FilterActionAllow},
+		{"allowed root", "/", FilterActionAllow},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &http.Request{
+				Host: "example.com",
+				URL:  &url.URL{Host: "example.com", Path: tt.path},
+			}
+			decision := engine.Match(req)
+			if decision.Action != tt.expected {
+				t.Errorf("got action %s, want %s", decision.Action, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFilterEngine_DisabledMode(t *testing.T) {
+	cfg := &FilterConfig{
+		// DefaultAction empty = filtering disabled
+		Rules: []FilterRule{
+			{Pattern: "blocked.com", Action: FilterActionBlock, Scope: FilterScopeHost},
+		},
+	}
+
+	engine, err := NewFilterEngine(cfg)
+	if err != nil {
+		t.Fatalf("failed to create filter engine: %v", err)
+	}
+
+	req := &http.Request{
+		Host: "blocked.com",
+		URL:  &url.URL{Host: "blocked.com", Path: "/"},
+	}
+	decision := engine.Match(req)
+
+	if decision.Action != FilterActionAllow {
+		t.Errorf("disabled mode should allow all, got %s", decision.Action)
+	}
+	if !decision.IsDefault {
+		t.Error("disabled mode should use default action")
+	}
+}
+
+func TestFilterEngine_DecisionCache(t *testing.T) {
+	cfg := &FilterConfig{
+		DefaultAction: FilterActionAsk,
+	}
+
+	engine, err := NewFilterEngine(cfg)
+	if err != nil {
+		t.Fatalf("failed to create filter engine: %v", err)
+	}
+
+	// Cache a decision
+	engine.CacheDecision("cached.example.com", FilterActionAllow)
+
+	req := &http.Request{
+		Host: "cached.example.com",
+		URL:  &url.URL{Host: "cached.example.com", Path: "/"},
+	}
+	decision := engine.Match(req)
+
+	if decision.Action != FilterActionAllow {
+		t.Errorf("cached decision should be allow, got %s", decision.Action)
+	}
+
+	// Clear cache
+	engine.ClearCache()
+
+	// Should now return ask (default for ask mode)
+	decision = engine.Match(req)
+	if decision.Action != FilterActionAsk {
+		t.Errorf("after cache clear, should return ask, got %s", decision.Action)
+	}
+}
+
+func TestFilterConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     FilterConfig
+		wantErr bool
+	}{
+		{
+			name: "valid whitelist",
+			cfg: FilterConfig{
+				DefaultAction: FilterActionBlock,
+				Rules: []FilterRule{
+					{Pattern: "*.example.com", Action: FilterActionAllow},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid default action",
+			cfg: FilterConfig{
+				DefaultAction: "invalid",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid rule action",
+			cfg: FilterConfig{
+				DefaultAction: FilterActionBlock,
+				Rules: []FilterRule{
+					{Pattern: "example.com", Action: "invalid"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing pattern",
+			cfg: FilterConfig{
+				DefaultAction: FilterActionBlock,
+				Rules: []FilterRule{
+					{Pattern: "", Action: FilterActionAllow},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid regex",
+			cfg: FilterConfig{
+				DefaultAction: FilterActionBlock,
+				Rules: []FilterRule{
+					{Pattern: "[invalid", Action: FilterActionAllow, Type: PatternTypeRegex},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestGlobToRegex(t *testing.T) {
+	tests := []struct {
+		glob    string
+		input   string
+		matches bool
+	}{
+		{"*.example.com", "api.example.com", true},
+		{"*.example.com", "example.com", false},
+		{"api.*.com", "api.example.com", true},
+		{"api.?.com", "api.x.com", true},
+		{"api.?.com", "api.xx.com", false},
+		{"test.com", "test.com", true},
+		{"test.com", "other.com", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.glob+"_"+tt.input, func(t *testing.T) {
+			regex := globToRegex(tt.glob)
+			matched := regexpMatch(regex, tt.input)
+			if matched != tt.matches {
+				t.Errorf("globToRegex(%q).match(%q) = %v, want %v (regex: %s)",
+					tt.glob, tt.input, matched, tt.matches, regex)
+			}
+		})
+	}
+}
+
+func regexpMatch(pattern, s string) bool {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(s)
+}
+
+func TestFilterRule_DetectPatternType(t *testing.T) {
+	tests := []struct {
+		pattern  string
+		expected PatternType
+	}{
+		{"example.com", PatternTypeGlob},            // default is glob
+		{"*.example.com", PatternTypeGlob},          // glob wildcard
+		{"api.?.com", PatternTypeGlob},              // glob single char
+		{"^api\\.example\\.com$", PatternTypeRegex}, // regex anchors
+		{"api.(dev|prod).com", PatternTypeRegex},    // regex alternation
+		{"[a-z]+.example.com", PatternTypeRegex},    // regex character class
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			rule := FilterRule{Pattern: tt.pattern}
+			got := rule.DetectPatternType()
+			if got != tt.expected {
+				t.Errorf("DetectPatternType(%q) = %s, want %s", tt.pattern, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBlockResponse(t *testing.T) {
+	req := &http.Request{
+		Host: "blocked.example.com",
+		URL:  &url.URL{Host: "blocked.example.com", Path: "/test"},
+	}
+
+	resp := BlockResponse(req, "test block reason")
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("X-Blocked-By") != "devsandbox-filter" {
+		t.Errorf("expected X-Blocked-By header")
+	}
+}

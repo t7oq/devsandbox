@@ -29,6 +29,8 @@ type RequestLog struct {
 	ResponseBody    []byte              `json:"resp_body,omitempty"`
 	Duration        time.Duration       `json:"duration_ns,omitempty"`
 	Error           string              `json:"error,omitempty"`
+	FilterAction    string              `json:"filter_action,omitempty"`
+	FilterReason    string              `json:"filter_reason,omitempty"`
 }
 
 // RequestLogger writes HTTP request/response logs to rotating gzip-compressed files
@@ -85,21 +87,33 @@ func (rl *RequestLogger) toLogEntry(req *RequestLog) *logging.Entry {
 	level := logging.LevelInfo
 	if req.Error != "" {
 		level = logging.LevelError
+	} else if req.FilterAction == "block" {
+		level = logging.LevelWarn
 	} else if req.StatusCode >= 400 {
 		level = logging.LevelWarn
+	}
+
+	fields := map[string]any{
+		"method":      req.Method,
+		"url":         req.URL,
+		"status":      req.StatusCode,
+		"duration_ms": req.Duration.Milliseconds(),
+		"error":       req.Error,
+	}
+
+	// Add filter fields if present
+	if req.FilterAction != "" {
+		fields["filter_action"] = req.FilterAction
+	}
+	if req.FilterReason != "" {
+		fields["filter_reason"] = req.FilterReason
 	}
 
 	return &logging.Entry{
 		Timestamp: req.Timestamp,
 		Level:     level,
 		Message:   fmt.Sprintf("%s %s %d", req.Method, req.URL, req.StatusCode),
-		Fields: map[string]any{
-			"method":      req.Method,
-			"url":         req.URL,
-			"status":      req.StatusCode,
-			"duration_ms": req.Duration.Milliseconds(),
-			"error":       req.Error,
-		},
+		Fields:    fields,
 	}
 }
 

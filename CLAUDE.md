@@ -7,6 +7,8 @@ After completing the task always run:
 - `task test` - to run tests
 - `task lint` - to run lint
 
+Always prefer reasonable defaults if that it possible. Reduce amount of work for the user to do when this is possible.
+
 ## Tools to use
 
 Tools management: mise
@@ -20,11 +22,8 @@ Linters: golangci + go default linters.
 
 ## TODOs
 
-- http filtering
-    - ability to define whitelist/blacklist/ask mode for http(s) requests
 - configuration support
-    - allow to configure tools to be enabled, proxy config
-        - allow to generate config from logs for proxy
+    - allow to configure tools to be enabled
         - allow to generate config for tools based on detected tools availability
     - allow to configure per-project settings
 - capture more audit data (e.g. files access, attempts to access restricted files, attempts to access network etc)

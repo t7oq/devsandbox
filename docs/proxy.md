@@ -289,6 +289,183 @@ devsandbox logs internal --last 100
 Proxy logs can be forwarded to remote destinations.
 See [Configuration - Remote Logging](configuration.md#remote-logging) for setup instructions.
 
+## HTTP Filtering
+
+HTTP filtering allows you to control which requests are allowed, blocked, or require user approval.
+
+### How It Works
+
+Filtering is enabled by setting `default_action` which determines what happens to requests that don't match any rule:
+
+| Default Action | Behavior |
+|----------------|----------|
+| `block` | Block unmatched requests (whitelist behavior) |
+| `allow` | Allow unmatched requests (blacklist behavior) |
+| `ask` | Prompt user for each unmatched request |
+
+### Quick Start
+
+```bash
+# Whitelist behavior - only allow specific domains, block everything else
+devsandbox --proxy --filter-default=block \
+  --allow-domain="*.github.com" \
+  --allow-domain="api.anthropic.com"
+
+# Blacklist behavior - block specific domains, allow everything else
+devsandbox --proxy --filter-default=allow \
+  --block-domain="*.tracking.io" \
+  --block-domain="ads.example.com"
+
+# Ask mode - interactive approval for unmatched requests
+devsandbox --proxy --filter-default=ask
+```
+
+### Configuration File
+
+Add filter rules to `~/.config/devsandbox/config.toml`:
+
+```toml
+[proxy.filter]
+# Enable filtering with default action for unmatched requests
+default_action = "block"  # whitelist behavior
+ask_timeout = 30
+cache_decisions = true
+
+[[proxy.filter.rules]]
+pattern = "*.github.com"
+action = "allow"
+scope = "host"
+
+[[proxy.filter.rules]]
+pattern = "api.anthropic.com"
+action = "allow"
+scope = "host"
+
+[[proxy.filter.rules]]
+pattern = "*.internal.corp"
+action = "block"
+scope = "host"
+reason = "Internal network blocked"
+```
+
+### Pattern Types
+
+Default is `glob`. Patterns containing regex characters (`^$|()[]{}\+`) are auto-detected as regex.
+
+| Type | Example | Description |
+|------|---------|-------------|
+| `glob` | `*.example.com` | Glob patterns (* and ?) - **default** |
+| `exact` | `api.example.com` | Exact string match |
+| `regex` | `^api\.(dev\|prod)\.com$` | Regular expressions |
+
+### Scopes
+
+Default is `host`.
+
+| Scope | Description | Example Match |
+|-------|-------------|---------------|
+| `host` | Request host only - **default** | `api.example.com` |
+| `path` | Request path only | `/api/v1/users` |
+| `url` | Full URL | `https://api.example.com/v1/users` |
+
+### Ask Mode
+
+In ask mode, unmatched requests require user approval via a separate monitor terminal.
+
+**Step 1**: Start the sandbox with ask mode:
+
+```bash
+devsandbox --proxy --filter-default=ask
+```
+
+The sandbox will display:
+
+```
+Filter: ask mode (default action for unmatched requests)
+
+Run in another terminal to approve/deny requests:
+  devsandbox proxy monitor
+
+Requests without response within 30s will be rejected.
+```
+
+**Step 2**: Open another terminal (in the same project directory) and run the monitor:
+
+```bash
+devsandbox proxy monitor
+```
+
+The socket path is auto-detected from the current directory's sandbox. You can also specify it explicitly:
+
+```bash
+devsandbox proxy monitor /path/to/ask.sock
+```
+
+The monitor displays incoming requests:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Request #1                                                      │
+├──────────────────────────────────────────────────────────────────┤
+│  Method: GET                                                     │
+│  Host:   api.example.com                                         │
+│  Path:   /v1/users                                               │
+├──────────────────────────────────────────────────────────────────┤
+│  [A]llow    [B]lock    Allow [S]ession    Block [N]ever         │
+└──────────────────────────────────────────────────────────────────┘
+Decision:
+```
+
+**Keys** (instant response, no Enter needed):
+- `a` - Allow this request
+- `b` - Block this request
+- `s` - Allow and remember for session
+- `n` - Block and remember for session
+
+**Timeout**: Requests that don't receive a response within 30 seconds are automatically rejected and logged to internal logs as unanswered.
+
+### Generate Filter Rules from Logs
+
+Analyze existing proxy logs to generate filter configuration:
+
+```bash
+# Generate whitelist rules from current project's logs (default: block unmatched)
+devsandbox proxy filter generate
+
+# Generate from specific log directory
+devsandbox proxy filter generate --from-logs ~/.local/share/devsandbox/myproject/logs/proxy/
+
+# Generate blacklist rules (allow unmatched)
+devsandbox proxy filter generate --default-action allow
+
+# Save to file
+devsandbox proxy filter generate -o filter-rules.toml
+
+# Only include domains with 5+ requests
+devsandbox proxy filter generate --min-requests 5
+```
+
+### Show Current Configuration
+
+```bash
+devsandbox proxy filter show
+```
+
+### Filter Logs
+
+Filter decisions are logged with requests:
+
+```json
+{
+  "ts": "2024-01-15T10:30:05Z",
+  "method": "GET",
+  "url": "https://blocked.example.com/",
+  "status": 403,
+  "filter_action": "block",
+  "filter_reason": "matched rule: *.blocked.com"
+}
+```
+
 ## Troubleshooting
 
 ### "proxy mode requires pasta"

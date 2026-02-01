@@ -34,6 +34,51 @@ type ProxyConfig struct {
 
 	// Port is the default proxy server port.
 	Port int `toml:"port"`
+
+	// Filter contains HTTP request filtering configuration.
+	Filter ProxyFilterConfig `toml:"filter"`
+}
+
+// ProxyFilterConfig contains HTTP filtering settings.
+// Filtering is enabled when DefaultAction is set.
+type ProxyFilterConfig struct {
+	// DefaultAction is the action when no rule matches.
+	// Setting this enables filtering:
+	// - "block": block unmatched requests (whitelist behavior)
+	// - "allow": allow unmatched requests (blacklist behavior)
+	// - "ask": prompt user for unmatched requests
+	DefaultAction string `toml:"default_action"`
+
+	// AskTimeout is the timeout in seconds for ask mode decisions.
+	// Default: 30
+	AskTimeout int `toml:"ask_timeout"`
+
+	// CacheDecisions enables caching of ask mode decisions for the session.
+	// Default: true
+	CacheDecisions *bool `toml:"cache_decisions"`
+
+	// Rules is the list of filter rules.
+	Rules []ProxyFilterRule `toml:"rules"`
+}
+
+// ProxyFilterRule defines a single filtering rule.
+type ProxyFilterRule struct {
+	// Pattern is the pattern to match (exact, glob, or regex).
+	Pattern string `toml:"pattern"`
+
+	// Action specifies what to do: "allow", "block", or "ask".
+	Action string `toml:"action"`
+
+	// Scope defines what to match: "host", "path", or "url".
+	// Default: "host"
+	Scope string `toml:"scope"`
+
+	// Type specifies pattern type: "exact", "glob", or "regex".
+	// Default: "glob"
+	Type string `toml:"type"`
+
+	// Reason is shown when blocking a request.
+	Reason string `toml:"reason"`
 }
 
 // SandboxConfig contains sandbox-related configuration.
@@ -218,6 +263,36 @@ enabled = false
 
 # Default proxy server port
 port = 8080
+
+# HTTP request filtering (requires proxy mode)
+# Filtering is enabled when default_action is set.
+# [proxy.filter]
+# Default action when no rule matches (enables filtering):
+# - "block": block unmatched requests (whitelist behavior)
+# - "allow": allow unmatched requests (blacklist behavior)
+# - "ask": prompt user for unmatched requests
+# default_action = "block"
+
+# Timeout in seconds for ask mode (default: 30)
+# ask_timeout = 30
+
+# Cache ask mode decisions for session (default: true)
+# cache_decisions = true
+
+# Filter rules (evaluated in order, first match wins)
+# Defaults: type = "glob", scope = "host"
+# [[proxy.filter.rules]]
+# pattern = "*.github.com"
+# action = "allow"
+
+# [[proxy.filter.rules]]
+# pattern = "api.anthropic.com"
+# action = "allow"
+
+# [[proxy.filter.rules]]
+# pattern = "*.tracking.io"
+# action = "block"
+# reason = "Tracking domain blocked"
 
 # Sandbox settings
 [sandbox]

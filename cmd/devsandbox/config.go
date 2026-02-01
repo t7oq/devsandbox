@@ -44,6 +44,37 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Printf("  port = %d\n", cfg.Proxy.Port)
 			fmt.Println()
 
+			// Show filter config if set
+			if cfg.Proxy.Filter.DefaultAction != "" {
+				fmt.Println("[proxy.filter]")
+				fmt.Printf("  default_action = %s\n", cfg.Proxy.Filter.DefaultAction)
+				if cfg.Proxy.Filter.AskTimeout > 0 {
+					fmt.Printf("  ask_timeout = %d\n", cfg.Proxy.Filter.AskTimeout)
+				}
+				if cfg.Proxy.Filter.CacheDecisions != nil {
+					fmt.Printf("  cache_decisions = %v\n", *cfg.Proxy.Filter.CacheDecisions)
+				}
+				fmt.Println()
+
+				if len(cfg.Proxy.Filter.Rules) > 0 {
+					for i, rule := range cfg.Proxy.Filter.Rules {
+						fmt.Printf("[[proxy.filter.rules]] #%d\n", i+1)
+						fmt.Printf("  pattern = %q\n", rule.Pattern)
+						fmt.Printf("  action = %s\n", rule.Action)
+						if rule.Scope != "" {
+							fmt.Printf("  scope = %s\n", rule.Scope)
+						}
+						if rule.Type != "" {
+							fmt.Printf("  type = %s\n", rule.Type)
+						}
+						if rule.Reason != "" {
+							fmt.Printf("  reason = %q\n", rule.Reason)
+						}
+					}
+					fmt.Println()
+				}
+			}
+
 			fmt.Println("[sandbox]")
 			basePath := cfg.Sandbox.BasePath
 			if basePath == "" {

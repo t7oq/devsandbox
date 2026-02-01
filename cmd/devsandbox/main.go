@@ -56,12 +56,18 @@ Proxy Mode (--proxy):
 	rootCmd.Flags().Bool("proxy", false, "Enable proxy mode (route traffic through MITM proxy)")
 	rootCmd.Flags().Int("proxy-port", proxy.DefaultProxyPort, "Proxy server port")
 
+	// Filter flags
+	rootCmd.Flags().String("filter-default", "", "Default filter action for unmatched requests: allow, block, or ask")
+	rootCmd.Flags().StringSlice("allow-domain", nil, "Allow domain pattern (can be repeated)")
+	rootCmd.Flags().StringSlice("block-domain", nil, "Block domain pattern (can be repeated)")
+
 	// Add subcommands
 	rootCmd.AddCommand(newSandboxesCmd())
 	rootCmd.AddCommand(newDoctorCmd())
 	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newLogsCmd())
 	rootCmd.AddCommand(newToolsCmd())
+	rootCmd.AddCommand(newProxyCmd())
 
 	rootCmd.SetVersionTemplate(fmt.Sprintf("devsandbox %s (built: %s)\n", version.FullVersion(), version.Date))
 
@@ -75,6 +81,9 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	showInfo, _ := cmd.Flags().GetBool("info")
 	proxyEnabled, _ := cmd.Flags().GetBool("proxy")
 	proxyPort, _ := cmd.Flags().GetInt("proxy-port")
+	filterDefault, _ := cmd.Flags().GetString("filter-default")
+	allowDomains, _ := cmd.Flags().GetStringSlice("allow-domain")
+	blockDomains, _ := cmd.Flags().GetStringSlice("block-domain")
 
 	// Load configuration file
 	appCfg, err := config.Load()
@@ -144,6 +153,10 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 		proxyCfg := proxy.NewConfig(cfg.SandboxRoot, proxyPort)
 		proxyCfg.LogReceivers = appCfg.Logging.Receivers
 		proxyCfg.LogAttributes = appCfg.Logging.Attributes
+
+		// Build filter configuration
+		proxyCfg.Filter = buildFilterConfig(appCfg, cmd, filterDefault, allowDomains, blockDomains)
+
 		proxyServer, err = proxy.NewServer(proxyCfg)
 		if err != nil {
 			return fmt.Errorf("failed to create proxy server: %w", err)
@@ -187,6 +200,18 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "Note: Using port %d (requested port %d was busy)\n", actualPort, proxyPort)
 		}
 		fmt.Fprintf(os.Stderr, "CA certificate: %s\n", proxyCfg.CACertPath)
+
+		// Show filter status
+		if proxyCfg.Filter != nil && proxyCfg.Filter.IsEnabled() {
+			if proxyCfg.Filter.DefaultAction == proxy.FilterActionAsk {
+				fmt.Fprintf(os.Stderr, "Filter: ask mode (default action for unmatched requests)\n")
+				fmt.Fprintf(os.Stderr, "\nRun in another terminal to approve/deny requests:\n")
+				fmt.Fprintf(os.Stderr, "  devsandbox proxy monitor\n\n")
+				fmt.Fprintf(os.Stderr, "Requests without response within 30s will be rejected.\n")
+			} else {
+				fmt.Fprintf(os.Stderr, "Filter: %d rules, default action: %s\n", len(proxyCfg.Filter.Rules), proxyCfg.Filter.DefaultAction)
+			}
+		}
 	}
 
 	builder := sandbox.NewBuilder(cfg)
@@ -301,4 +326,69 @@ func getMiseConfig(cfg *sandbox.Config) (writable, persistent bool) {
 		persistent = v
 	}
 	return
+}
+
+// buildFilterConfig builds filter configuration from config file and CLI flags.
+// CLI flags override config file settings.
+func buildFilterConfig(appCfg *config.Config, cmd *cobra.Command, filterDefault string, allowDomains, blockDomains []string) *proxy.FilterConfig {
+	filterCfg := proxy.DefaultFilterConfig()
+
+	// Apply config file settings
+	if appCfg.Proxy.Filter.DefaultAction != "" {
+		filterCfg.DefaultAction = proxy.FilterAction(appCfg.Proxy.Filter.DefaultAction)
+	}
+	if appCfg.Proxy.Filter.AskTimeout > 0 {
+		filterCfg.AskTimeout = appCfg.Proxy.Filter.AskTimeout
+	}
+	filterCfg.CacheDecisions = appCfg.Proxy.Filter.CacheDecisions
+
+	// Convert config file rules
+	for _, r := range appCfg.Proxy.Filter.Rules {
+		filterCfg.Rules = append(filterCfg.Rules, proxy.FilterRule{
+			Pattern: r.Pattern,
+			Action:  proxy.FilterAction(r.Action),
+			Scope:   proxy.FilterScope(r.Scope),
+			Type:    proxy.PatternType(r.Type),
+			Reason:  r.Reason,
+		})
+	}
+
+	// CLI override for default action
+	if cmd.Flags().Changed("filter-default") && filterDefault != "" {
+		filterCfg.DefaultAction = proxy.FilterAction(filterDefault)
+	}
+
+	// Add CLI allow domains as rules
+	for _, domain := range allowDomains {
+		filterCfg.Rules = append(filterCfg.Rules, proxy.FilterRule{
+			Pattern: domain,
+			Action:  proxy.FilterActionAllow,
+			Scope:   proxy.FilterScopeHost,
+		})
+	}
+
+	// Add CLI block domains as rules
+	for _, domain := range blockDomains {
+		filterCfg.Rules = append(filterCfg.Rules, proxy.FilterRule{
+			Pattern: domain,
+			Action:  proxy.FilterActionBlock,
+			Scope:   proxy.FilterScopeHost,
+		})
+	}
+
+	// Auto-enable filtering if domains provided but no default action specified
+	if filterCfg.DefaultAction == "" {
+		if len(allowDomains) > 0 && len(blockDomains) == 0 {
+			// Whitelist behavior: block unmatched
+			filterCfg.DefaultAction = proxy.FilterActionBlock
+		} else if len(blockDomains) > 0 && len(allowDomains) == 0 {
+			// Blacklist behavior: allow unmatched
+			filterCfg.DefaultAction = proxy.FilterActionAllow
+		} else if len(allowDomains) > 0 && len(blockDomains) > 0 {
+			// Mixed rules, use whitelist behavior (more restrictive)
+			filterCfg.DefaultAction = proxy.FilterActionBlock
+		}
+	}
+
+	return filterCfg
 }
