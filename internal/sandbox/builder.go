@@ -423,7 +423,10 @@ func (b *Builder) AddTools() *Builder {
 	// Run setup for tools that need it (e.g., generate safe gitconfig, starship config)
 	for _, tool := range tools.Available(home) {
 		if setup, ok := tool.(tools.ToolWithSetup); ok {
-			_ = setup.Setup(home, sandboxHome) // Ignore errors, bindings are optional
+			if err := setup.Setup(home, sandboxHome); err != nil {
+				b.err = fmt.Errorf("tool setup failed for %s: %w", tool.Name(), err)
+				return b
+			}
 		}
 	}
 
