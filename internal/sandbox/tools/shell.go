@@ -211,6 +211,7 @@ func (b *Bash) Available(homeDir string) bool {
 
 func (b *Bash) Bindings(homeDir, sandboxHome string) []Binding {
 	return []Binding{
+		// Core bash configuration files
 		{
 			Source:   filepath.Join(homeDir, ".bashrc"),
 			ReadOnly: true,
@@ -227,7 +228,57 @@ func (b *Bash) Bindings(homeDir, sandboxHome string) []Binding {
 			Optional: true,
 		},
 		{
+			Source:   filepath.Join(homeDir, ".bash_logout"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		// Custom tools support: aliases, functions, completions
+		{
+			Source:   filepath.Join(homeDir, ".bash_aliases"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		{
+			Source:   filepath.Join(homeDir, ".bash_functions"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		{
+			Source:   filepath.Join(homeDir, ".bash_completion"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		{
+			Source:   filepath.Join(homeDir, ".bash_completion.d"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		// Readline configuration (affects bash input)
+		{
+			Source:   filepath.Join(homeDir, ".inputrc"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		// XDG config locations
+		{
 			Source:   filepath.Join(homeDir, ".config", "bash"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		{
+			Source:   filepath.Join(homeDir, ".config", "readline"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		// Local bash data (history excluded for privacy)
+		{
+			Source:   filepath.Join(homeDir, ".local", "share", "bash"),
+			ReadOnly: true,
+			Optional: true,
+		},
+		// Bash-it framework (popular bash customization)
+		{
+			Source:   filepath.Join(homeDir, ".bash_it"),
 			ReadOnly: true,
 			Optional: true,
 		},
@@ -253,11 +304,21 @@ func (b *Bash) Check(homeDir string) CheckResult {
 		result.BinaryPath = path
 	}
 
-	// Check config paths
+	// Check all config paths that we mount
 	configPaths := []string{
 		filepath.Join(homeDir, ".bashrc"),
 		filepath.Join(homeDir, ".bash_profile"),
 		filepath.Join(homeDir, ".profile"),
+		filepath.Join(homeDir, ".bash_logout"),
+		filepath.Join(homeDir, ".bash_aliases"),
+		filepath.Join(homeDir, ".bash_functions"),
+		filepath.Join(homeDir, ".bash_completion"),
+		filepath.Join(homeDir, ".bash_completion.d"),
+		filepath.Join(homeDir, ".inputrc"),
+		filepath.Join(homeDir, ".config", "bash"),
+		filepath.Join(homeDir, ".config", "readline"),
+		filepath.Join(homeDir, ".local", "share", "bash"),
+		filepath.Join(homeDir, ".bash_it"),
 	}
 
 	for _, p := range configPaths {
