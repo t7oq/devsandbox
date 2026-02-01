@@ -16,23 +16,26 @@ func init() {
 type GitMode string
 
 const (
-	// GitModeReadOnly provides safe gitconfig with only user.name and user.email.
+	// GitModeReadOnly mounts .git as read-only to prevent commits.
+	// Provides safe gitconfig with only user.name and user.email.
 	// No credentials, signing keys, or other sensitive data.
 	GitModeReadOnly GitMode = "readonly"
 
 	// GitModeReadWrite provides full git access including credentials,
-	// SSH keys, and GPG keys for signing commits.
+	// SSH keys, and GPG keys for signing commits. .git is writable.
 	GitModeReadWrite GitMode = "readwrite"
 
 	// GitModeDisabled completely disables git configuration.
 	// Git commands will work but without any user configuration.
+	// .git remains writable (controlled by project bindings).
 	GitModeDisabled GitMode = "disabled"
 )
 
 // Git provides configurable git configuration.
 // Supports three modes: readonly (default), readwrite, and disabled.
 type Git struct {
-	mode GitMode
+	mode       GitMode
+	projectDir string
 }
 
 func (g *Git) Name() string {
@@ -46,7 +49,7 @@ func (g *Git) Description() string {
 	case GitModeDisabled:
 		return "Git configuration (disabled)"
 	default:
-		return "Git configuration (safe mode, no credentials)"
+		return "Git configuration (read-only, no commits)"
 	}
 }
 
@@ -60,6 +63,7 @@ func (g *Git) Available(homeDir string) bool {
 // Configure implements ToolWithConfig.
 func (g *Git) Configure(globalCfg GlobalConfig, toolCfg map[string]any) {
 	g.mode = GitModeReadOnly // default
+	g.projectDir = globalCfg.ProjectDir
 
 	if toolCfg == nil {
 		return
@@ -92,11 +96,11 @@ func (g *Git) Bindings(homeDir, sandboxHome string) []Binding {
 	}
 }
 
-// readOnlyBindings returns bindings for readonly mode (safe gitconfig only).
+// readOnlyBindings returns bindings for readonly mode (safe gitconfig + read-only .git).
 func (g *Git) readOnlyBindings(homeDir, sandboxHome string) []Binding {
 	safeGitconfig := filepath.Join(sandboxHome, ".gitconfig.safe")
 
-	return []Binding{
+	bindings := []Binding{
 		{
 			Source:   safeGitconfig,
 			Dest:     filepath.Join(homeDir, ".gitconfig"),
@@ -104,6 +108,20 @@ func (g *Git) readOnlyBindings(homeDir, sandboxHome string) []Binding {
 			Optional: true, // Safe config might not exist if Setup failed
 		},
 	}
+
+	// Mount .git as read-only to prevent commits
+	if g.projectDir != "" {
+		gitDir := filepath.Join(g.projectDir, ".git")
+		if _, err := os.Stat(gitDir); err == nil {
+			bindings = append(bindings, Binding{
+				Source:   gitDir,
+				ReadOnly: true,
+				Optional: false, // .git must exist if we're mounting it
+			})
+		}
+	}
+
+	return bindings
 }
 
 // readWriteBindings returns bindings for readwrite mode (full git access).

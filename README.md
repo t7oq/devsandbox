@@ -103,13 +103,13 @@ devsandbox logs proxy -f
 
 ### Git Integration
 
-By default, git runs in **readonly** mode with a sanitized config containing only `user.name` and `user.email`. This allows commits without exposing credentials.
+By default, git runs in **readonly** mode where `.git` is mounted read-only, preventing commits. This is the safest option for running untrusted code.
 
-| Mode | Description |
-|------|-------------|
-| `readonly` | Safe gitconfig (name/email only), no credentials **(default)** |
-| `readwrite` | Full access: credentials, SSH keys, GPG signing |
-| `disabled` | No git config, commands work with defaults |
+| Mode | .git | Commits | Credentials |
+|------|------|---------|-------------|
+| `readonly` | read-only | ❌ blocked | ❌ none **(default)** |
+| `readwrite` | read-write | ✅ allowed | ✅ SSH, GPG, credentials |
+| `disabled` | read-write | ✅ allowed | ❌ none |
 
 Configure in `~/.config/devsandbox/config.toml`:
 

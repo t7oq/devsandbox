@@ -253,3 +253,125 @@ func TestBuilder_Overlay_ResetsState(t *testing.T) {
 	// State should be reset, so this should panic
 	b.TmpOverlay("/dest2")
 }
+
+func TestBuilder_MountConflict_ExactPath(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("mounting same path twice should panic")
+		}
+		// Verify error message mentions "ambiguous"
+		msg, ok := r.(string)
+		if !ok || !contains(msg, "ambiguous") {
+			t.Errorf("panic message should mention 'ambiguous', got: %v", r)
+		}
+	}()
+
+	cfg := &Config{}
+	b := NewBuilder(cfg)
+	b.Bind("/home/test/project", "/home/test/project")
+	b.ROBind("/home/test/project", "/home/test/project") // should panic - same dest
+}
+
+func TestBuilder_MountConflict_ParentAfterChild(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("mounting parent after child should panic")
+		}
+		// Verify error message mentions "shadow"
+		msg, ok := r.(string)
+		if !ok || !contains(msg, "shadow") {
+			t.Errorf("panic message should mention 'shadow', got: %v", r)
+		}
+	}()
+
+	cfg := &Config{}
+	b := NewBuilder(cfg)
+	b.ROBind("/home/test/project/.git", "/home/test/project/.git") // child first
+	b.Bind("/home/test/project", "/home/test/project")             // parent after - should panic
+}
+
+func TestBuilder_MountConflict_ChildAfterParent_OK(t *testing.T) {
+	// Child after parent should NOT panic - this is valid (child overrides)
+	cfg := &Config{}
+	b := NewBuilder(cfg)
+	b.Bind("/home/test/project", "/home/test/project")             // parent first
+	b.ROBind("/home/test/project/.git", "/home/test/project/.git") // child after - OK
+
+	// If we get here without panic, the test passes
+	args := b.Build()
+	if len(args) != 6 {
+		t.Errorf("expected 6 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestBuilder_MountConflict_DifferentPaths_OK(t *testing.T) {
+	// Unrelated paths should not conflict
+	cfg := &Config{}
+	b := NewBuilder(cfg)
+	b.Bind("/home/test/project1", "/home/test/project1")
+	b.Bind("/home/test/project2", "/home/test/project2")
+	b.ROBind("/usr", "/usr")
+
+	args := b.Build()
+	if len(args) != 9 {
+		t.Errorf("expected 9 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestBuilder_MountConflict_OverlayAfterBind(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("overlay to same path as existing bind should panic")
+		}
+	}()
+
+	cfg := &Config{}
+	b := NewBuilder(cfg)
+	b.Bind("/home/test/project", "/home/test/project")
+	b.OverlaySrc("/lower").TmpOverlay("/home/test/project") // should panic - same dest
+}
+
+func TestIsParentPath(t *testing.T) {
+	tests := []struct {
+		parent   string
+		child    string
+		expected bool
+	}{
+		{"/home/test/project", "/home/test/project/.git", true},
+		{"/home/test/project", "/home/test/project/src/main.go", true},
+		{"/home/test", "/home/test/project", true},
+		{"/home/test/project/.git", "/home/test/project", false},
+		{"/home/test/project", "/home/test/project", false},
+		{"/home/test/project1", "/home/test/project2", false},
+		{"/home/test/project", "/home/test/project-other", false},
+		{"/usr", "/usr/lib", true},
+		{"/usr/lib", "/usr", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.parent+"_"+tt.child, func(t *testing.T) {
+			result := isParentPath(tt.parent, tt.child)
+			if result != tt.expected {
+				t.Errorf("isParentPath(%q, %q) = %v, want %v",
+					tt.parent, tt.child, result, tt.expected)
+			}
+		})
+	}
+}
+
+// contains checks if s contains substr (simple helper for tests)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

@@ -219,3 +219,106 @@ func TestDetectShell(t *testing.T) {
 		})
 	}
 }
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Simple strings that don't need quoting
+		{"simple", "simple"},
+		{"file.txt", "file.txt"},
+		{"path/to/file", "path/to/file"},
+		{"-flag", "-flag"},
+		{"--option=value", "--option=value"},
+
+		// Empty string
+		{"", "''"},
+
+		// Strings with spaces need quoting
+		{"hello world", "'hello world'"},
+		{"test commit message", "'test commit message'"},
+
+		// Strings with special characters
+		{"file name.txt", "'file name.txt'"},
+		{"$variable", "'$variable'"},
+		{"`command`", "'`command`'"},
+		{"path with spaces/file", "'path with spaces/file'"},
+		{"foo*bar", "'foo*bar'"},
+		{"foo?bar", "'foo?bar'"},
+
+		// Strings with quotes need special escaping
+		{"it's", "'it'\\''s'"},
+		{"say 'hello'", "'say '\\''hello'\\'''"},
+
+		// Double quotes
+		{`say "hello"`, `'say "hello"'`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := shellQuote(tt.input)
+			if result != tt.expected {
+				t.Errorf("shellQuote(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestShellJoinArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected string
+	}{
+		{
+			name:     "simple command",
+			args:     []string{"git", "status"},
+			expected: "git status",
+		},
+		{
+			name:     "command with flag",
+			args:     []string{"git", "commit", "-m", "test message"},
+			expected: "git commit -m 'test message'",
+		},
+		{
+			name:     "command with special chars",
+			args:     []string{"echo", "hello world", "$HOME"},
+			expected: "echo 'hello world' '$HOME'",
+		},
+		{
+			name:     "npm install",
+			args:     []string{"npm", "install"},
+			expected: "npm install",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := shellJoinArgs(tt.args)
+			if result != tt.expected {
+				t.Errorf("shellJoinArgs(%v) = %q, want %q", tt.args, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBuildShellCommand_QuotedArgs(t *testing.T) {
+	cfg := &Config{
+		ProjectName: "testproject",
+		Shell:       ShellBash,
+		ShellPath:   "/bin/bash",
+	}
+
+	// Test command with spaces in argument
+	cmd := BuildShellCommand(cfg, []string{"git", "commit", "-m", "test commit message"})
+
+	if len(cmd) != 3 {
+		t.Fatalf("Expected 3 elements, got %d: %v", len(cmd), cmd)
+	}
+
+	// The command should contain the properly quoted message
+	if !strings.Contains(cmd[2], "'test commit message'") {
+		t.Errorf("Expected quoted message in command, got: %s", cmd[2])
+	}
+}

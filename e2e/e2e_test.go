@@ -948,6 +948,291 @@ func TestSandboxes_DeprecatedLogsRemoved(t *testing.T) {
 	}
 }
 
+// Git mode tests
+
+func TestSandbox_GitReadOnlyMode_BlocksCommits(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed on host")
+	}
+
+	// Create a temp config directory to ensure clean config (no proxy)
+	tmpConfigDir, err := os.MkdirTemp("", "sandbox-config-readonly-*")
+	if err != nil {
+		t.Fatalf("failed to create temp config dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpConfigDir) }()
+
+	// Create minimal config with readonly git (default)
+	configPath := filepath.Join(tmpConfigDir, "devsandbox", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("[tools.git]\nmode = \"readonly\"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// Create a temp project directory with a git repo
+	tmpDir, err := os.MkdirTemp("", "sandbox-git-readonly-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Initialize git repo
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to init git repo: %v\nOutput: %s", err, output)
+	}
+
+	// Configure git user (needed for commits)
+	configCmds := [][]string{
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test User"},
+	}
+	for _, args := range configCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("failed to configure git: %v\nOutput: %s", err, output)
+		}
+	}
+
+	// Create a file to commit
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Stage the file outside sandbox first
+	addCmd := exec.Command("git", "add", "test.txt")
+	addCmd.Dir = tmpDir
+	if output, err := addCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to stage file: %v\nOutput: %s", err, output)
+	}
+
+	// Try to commit inside sandbox with readonly mode
+	// This should fail because .git is read-only
+	cmd := exec.Command(binaryPath, "git", "commit", "-m", "test commit")
+	cmd.Dir = tmpDir
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+tmpConfigDir)
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	// Commit should fail with a read-only filesystem error
+	if err == nil {
+		t.Error("git commit should fail in readonly mode, but succeeded")
+	}
+
+	// Should contain error about read-only or permission denied
+	readOnlyErrors := []string{
+		"read-only",
+		"Read-only",
+		"permission denied",
+		"Permission denied",
+		"cannot lock",
+		"fatal:",
+	}
+
+	foundError := false
+	for _, errMsg := range readOnlyErrors {
+		if strings.Contains(outputStr, errMsg) {
+			foundError = true
+			break
+		}
+	}
+
+	if !foundError {
+		t.Errorf("expected read-only error, got: %s", outputStr)
+	}
+}
+
+func TestSandbox_GitReadOnlyMode_AllowsRead(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed on host")
+	}
+
+	// Create a temp project directory with a git repo
+	tmpDir, err := os.MkdirTemp("", "sandbox-git-read-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Initialize git repo
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to init git repo: %v\nOutput: %s", err, output)
+	}
+
+	// Configure and create initial commit outside sandbox
+	configCmds := [][]string{
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test User"},
+	}
+	for _, args := range configCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpDir
+		if _, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("failed to configure git: %v", err)
+		}
+	}
+
+	// Create and commit a file outside sandbox
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("initial content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	commitCmds := [][]string{
+		{"git", "add", "test.txt"},
+		{"git", "commit", "-m", "initial commit"},
+	}
+	for _, args := range commitCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("failed: %v\nOutput: %s", err, output)
+		}
+	}
+
+	// Read operations should work in readonly mode
+	t.Run("git_status", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, "git", "status")
+		cmd.Dir = tmpDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("git status should work in readonly mode: %v\nOutput: %s", err, output)
+		}
+	})
+
+	t.Run("git_log", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, "git", "log", "--oneline")
+		cmd.Dir = tmpDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("git log should work in readonly mode: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(string(output), "initial commit") {
+			t.Errorf("git log should show commit, got: %s", output)
+		}
+	})
+
+	t.Run("git_diff", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, "git", "diff", "HEAD")
+		cmd.Dir = tmpDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("git diff should work in readonly mode: %v\nOutput: %s", err, output)
+		}
+	})
+
+	t.Run("git_branch", func(t *testing.T) {
+		cmd := exec.Command(binaryPath, "git", "branch", "-a")
+		cmd.Dir = tmpDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("git branch should work in readonly mode: %v\nOutput: %s", err, output)
+		}
+	})
+}
+
+func TestSandbox_GitDisabledMode_AllowsCommits(t *testing.T) {
+	if !bwrapAvailable() {
+		t.Skip("bwrap not available")
+	}
+
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed on host")
+	}
+
+	// Create a temp config directory with git mode = disabled
+	tmpConfigDir, err := os.MkdirTemp("", "sandbox-config-*")
+	if err != nil {
+		t.Fatalf("failed to create temp config dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpConfigDir) }()
+
+	configPath := filepath.Join(tmpConfigDir, "devsandbox", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	configContent := `[tools.git]
+mode = "disabled"
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// Create a temp project directory with a git repo
+	tmpDir, err := os.MkdirTemp("", "sandbox-git-disabled-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Initialize git repo and configure
+	setupCmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test User"},
+	}
+	for _, args := range setupCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("failed: %v\nOutput: %s", err, output)
+		}
+	}
+
+	// Create a test file
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Stage and commit inside sandbox with disabled mode
+	// Use XDG_CONFIG_HOME to point to our custom config
+	cmd := exec.Command(binaryPath, "git", "add", "test.txt")
+	cmd.Dir = tmpDir
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+tmpConfigDir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add failed: %v\nOutput: %s", err, output)
+	}
+
+	// Commit should work in disabled mode
+	// Note: git config is set in the repo itself, so commit should work
+	cmd = exec.Command(binaryPath, "git", "commit", "-m", "test commit")
+	cmd.Dir = tmpDir
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+tmpConfigDir)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		t.Errorf("git commit should succeed in disabled mode: %v\nOutput: %s", err, output)
+	}
+
+	// Verify commit was created
+	logCmd := exec.Command("git", "log", "--oneline")
+	logCmd.Dir = tmpDir
+	logOutput, _ := logCmd.CombinedOutput()
+	if !strings.Contains(string(logOutput), "test commit") {
+		t.Errorf("commit should be visible in git log, got: %s", logOutput)
+	}
+}
+
 // bwrapAvailable checks if bwrap is installed AND functional.
 // GitHub Actions and some CI environments don't allow user namespaces,
 // so we need to test if bwrap actually works, not just if it's installed.

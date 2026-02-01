@@ -4,22 +4,113 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"devsandbox/internal/sandbox/tools"
 )
 
+// getCaller returns the name of the calling function (skipping n frames).
+func getCaller(skip int) string {
+	pc, _, _, ok := runtime.Caller(skip)
+	if !ok {
+		return "unknown"
+	}
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return "unknown"
+	}
+	// Extract just the function name
+	name := fn.Name()
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		name = name[idx+1:]
+	}
+	return name
+}
+
+// mountInfo tracks information about a mount for conflict detection.
+type mountInfo struct {
+	dest     string
+	source   string
+	readOnly bool
+	caller   string // function that added this mount for error messages
+}
+
 type Builder struct {
 	cfg            *Config
 	args           []string
 	overlaySrcSeen bool // tracks if OverlaySrc was called before overlay mount
+	mounts         []mountInfo
 }
 
 func NewBuilder(cfg *Config) *Builder {
 	return &Builder{
-		cfg:  cfg,
-		args: make([]string, 0, 128),
+		cfg:    cfg,
+		args:   make([]string, 0, 128),
+		mounts: make([]mountInfo, 0, 64),
 	}
+}
+
+// trackMount records a mount and checks for conflicts.
+// Panics if:
+// - The exact destination was already mounted (ambiguous)
+// - This mount would shadow an existing child mount (parent after child)
+func (b *Builder) trackMount(dest, source string, readOnly bool, caller string) {
+	dest = filepath.Clean(dest)
+
+	for _, existing := range b.mounts {
+		existingDest := filepath.Clean(existing.dest)
+
+		// Check for exact same destination
+		if dest == existingDest {
+			panic(fmt.Sprintf(
+				"builder: ambiguous mount - %s already mounted by %s, cannot mount again by %s\n"+
+					"  existing: %s -> %s (ro=%v)\n"+
+					"  new:      %s -> %s (ro=%v)",
+				dest, existing.caller, caller,
+				existing.source, existingDest, existing.readOnly,
+				source, dest, readOnly,
+			))
+		}
+
+		// Check if new mount is a parent of existing mount (would shadow it)
+		// A parent mount after a child mount shadows the child
+		if isParentPath(dest, existingDest) {
+			panic(fmt.Sprintf(
+				"builder: mount ordering error - mounting parent %s after child %s would shadow it\n"+
+					"  child mounted by:  %s (%s -> %s, ro=%v)\n"+
+					"  parent mounted by: %s (%s -> %s, ro=%v)\n"+
+					"  Fix: mount parent paths before child paths",
+				dest, existingDest,
+				existing.caller, existing.source, existingDest, existing.readOnly,
+				caller, source, dest, readOnly,
+			))
+		}
+	}
+
+	b.mounts = append(b.mounts, mountInfo{
+		dest:     dest,
+		source:   source,
+		readOnly: readOnly,
+		caller:   caller,
+	})
+}
+
+// isParentPath checks if parent is a parent directory of child.
+func isParentPath(parent, child string) bool {
+	parent = filepath.Clean(parent)
+	child = filepath.Clean(child)
+
+	if parent == child {
+		return false
+	}
+
+	// Ensure parent ends with separator for proper prefix check
+	if !strings.HasSuffix(parent, string(filepath.Separator)) {
+		parent += string(filepath.Separator)
+	}
+
+	return strings.HasPrefix(child, parent)
 }
 
 func (b *Builder) Build() []string {
@@ -66,25 +157,29 @@ func (b *Builder) Tmpfs(dest string) *Builder {
 }
 
 func (b *Builder) ROBind(src, dest string) *Builder {
+	b.trackMount(dest, src, true, getCaller(2))
 	b.add("--ro-bind", src, dest)
 	return b
 }
 
 func (b *Builder) ROBindIfExists(src, dest string) *Builder {
 	if pathExists(src) {
-		b.ROBind(src, dest)
+		b.trackMount(dest, src, true, getCaller(2))
+		b.add("--ro-bind", src, dest)
 	}
 	return b
 }
 
 func (b *Builder) Bind(src, dest string) *Builder {
+	b.trackMount(dest, src, false, getCaller(2))
 	b.add("--bind", src, dest)
 	return b
 }
 
 func (b *Builder) BindIfExists(src, dest string) *Builder {
 	if pathExists(src) {
-		b.Bind(src, dest)
+		b.trackMount(dest, src, false, getCaller(2))
+		b.add("--bind", src, dest)
 	}
 	return b
 }
@@ -123,6 +218,7 @@ func (b *Builder) requireOverlaySrc(method string) {
 // Panics if OverlaySrc was not called first.
 func (b *Builder) TmpOverlay(dest string) *Builder {
 	b.requireOverlaySrc("TmpOverlay")
+	b.trackMount(dest, "overlay:tmpfs", false, getCaller(2))
 	b.add("--tmp-overlay", dest)
 	b.overlaySrcSeen = false // reset for next overlay
 	return b
@@ -135,6 +231,7 @@ func (b *Builder) TmpOverlay(dest string) *Builder {
 // Panics if OverlaySrc was not called first.
 func (b *Builder) Overlay(rwSrc, workDir, dest string) *Builder {
 	b.requireOverlaySrc("Overlay")
+	b.trackMount(dest, "overlay:"+rwSrc, false, getCaller(2))
 	b.add("--overlay", rwSrc, workDir, dest)
 	b.overlaySrcSeen = false // reset for next overlay
 	return b
@@ -144,6 +241,7 @@ func (b *Builder) Overlay(rwSrc, workDir, dest string) *Builder {
 // Panics if OverlaySrc was not called first.
 func (b *Builder) ROOverlay(dest string) *Builder {
 	b.requireOverlaySrc("ROOverlay")
+	b.trackMount(dest, "overlay:ro", true, getCaller(2))
 	b.add("--ro-overlay", dest)
 	b.overlaySrcSeen = false // reset for next overlay
 	return b
@@ -324,6 +422,7 @@ func (b *Builder) configureTool(tool tools.ToolWithConfig, toolName string) {
 	// Build global config
 	globalCfg := tools.GlobalConfig{
 		OverlayEnabled: b.cfg.OverlayEnabled,
+		ProjectDir:     b.cfg.ProjectDir,
 	}
 
 	// Get tool's config section from ToolsConfig

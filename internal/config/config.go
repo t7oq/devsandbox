@@ -312,9 +312,9 @@ port = 8080
 # Git access settings
 [tools.git]
 # Git access mode:
-# - "readonly" (default): safe gitconfig with only user.name/email, no credentials
+# - "readonly" (default): .git mounted read-only (no commits), no credentials
 # - "readwrite": full git access with credentials, SSH keys, GPG keys
-# - "disabled": no git configuration (git commands work without user config)
+# - "disabled": no git config, but .git writable (commits need --author)
 mode = "readonly"
 
 # Mise tool manager settings

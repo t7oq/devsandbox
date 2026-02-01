@@ -217,15 +217,15 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	builder := sandbox.NewBuilder(cfg)
 
 	// Build sandbox arguments
-	// Note: Order matters - tmpfs for /tmp must be created before mounting CA cert to /tmp
+	// Note: Order matters - later bindings override earlier ones for the same path
 	builder.AddBaseArgs() // Creates /tmp as tmpfs
 	builder.AddSystemBindings()
 	builder.AddNetworkBindings()
 	builder.AddLocaleBindings()
 	builder.AddCABindings()
 	builder.AddSandboxHome()
-	builder.AddTools() // All tools: shells, mise, nvim, git, AI tools, etc.
 	builder.AddProjectBindings()
+	builder.AddTools()              // After project bindings so tools can override (e.g., .git read-only)
 	builder.AddProxyCACertificate() // Must come after AddBaseArgs (needs /tmp tmpfs)
 	builder.AddEnvironment()
 

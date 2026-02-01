@@ -5,6 +5,33 @@ import (
 	"strings"
 )
 
+// shellQuote quotes a string for safe use in a shell command.
+// Returns the string unchanged if it's safe, otherwise wraps in single quotes.
+func shellQuote(s string) string {
+	// If the string is empty, return quoted empty string
+	if s == "" {
+		return "''"
+	}
+
+	// Characters that require quoting in shell
+	needsQuoting := false
+	for _, c := range s {
+		switch c {
+		case ' ', '\t', '\n', '"', '\'', '`', '$', '\\', '!', '*', '?', '[', ']', '(', ')', '{', '}', '<', '>', '|', '&', ';', '#', '~':
+			needsQuoting = true
+		}
+	}
+
+	if !needsQuoting {
+		return s
+	}
+
+	// Use single quotes and escape any single quotes within
+	// In shell, 'foo'\''bar' produces foo'bar
+	escaped := strings.ReplaceAll(s, "'", "'\\''")
+	return "'" + escaped + "'"
+}
+
 // BuildShellCommand creates the command to run inside the sandbox
 func BuildShellCommand(cfg *Config, args []string) []string {
 	switch cfg.Shell {
@@ -26,7 +53,7 @@ func buildFishCommand(cfg *Config, args []string) []string {
 		return []string{cfg.ShellPath, "-c", fishInit}
 	}
 
-	cmdString := strings.Join(args, " ")
+	cmdString := shellJoinArgs(args)
 	fishCmd := miseActivation + "; " + cmdString
 	return []string{cfg.ShellPath, "-c", fishCmd}
 }
@@ -41,7 +68,7 @@ func buildBashCommand(cfg *Config, args []string) []string {
 		return []string{cfg.ShellPath, "-c", bashInit}
 	}
 
-	cmdString := strings.Join(args, " ")
+	cmdString := shellJoinArgs(args)
 	bashCmd := miseActivation + "; " + cmdString
 	return []string{cfg.ShellPath, "-c", bashCmd}
 }
@@ -56,7 +83,16 @@ func buildZshCommand(cfg *Config, args []string) []string {
 		return []string{cfg.ShellPath, "-c", zshInit}
 	}
 
-	cmdString := strings.Join(args, " ")
+	cmdString := shellJoinArgs(args)
 	zshCmd := miseActivation + "; " + cmdString
 	return []string{cfg.ShellPath, "-c", zshCmd}
+}
+
+// shellJoinArgs joins arguments with proper shell quoting.
+func shellJoinArgs(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellQuote(arg)
+	}
+	return strings.Join(quoted, " ")
 }

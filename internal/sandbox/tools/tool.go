@@ -104,6 +104,9 @@ type ToolWithCheck interface {
 type GlobalConfig struct {
 	// OverlayEnabled indicates if overlays are globally enabled.
 	OverlayEnabled bool
+
+	// ProjectDir is the current project directory (where .git may reside).
+	ProjectDir string
 }
 
 // ToolWithConfig extends Tool with configuration support.

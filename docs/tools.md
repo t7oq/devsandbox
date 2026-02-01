@@ -308,20 +308,22 @@ mode = "readonly"  # "readonly" (default), "readwrite", or "disabled"
 
 #### readonly (default)
 
-Maximum isolation - safe gitconfig with only user.name and email:
+Maximum isolation - `.git` directory is mounted read-only:
 
-- View history, diff, log
-- Stage and commit changes
-- Branch operations
-- **No SSH access** (HTTPS only)
+- View history, diff, log, status
+- Branch operations (local only)
+- **No commits** (`.git` is read-only)
+- **No SSH access**
 - **No GPG signing**
 - **No credential helpers**
+
+This is the safest mode for running untrusted code that needs to read repository data.
 
 #### readwrite
 
 Full git access for trusted projects:
 
-- Everything in readonly mode
+- All git operations including commits
 - SSH keys (read-only access to `~/.ssh`)
 - GPG signing (read-only access to `~/.gnupg`)
 - Git credentials (read-only access to `~/.git-credentials`)
@@ -336,31 +338,14 @@ mode = "readwrite"
 
 #### disabled
 
-No git user configuration:
+No git configuration, but `.git` remains writable:
 
 ```toml
 [tools.git]
 mode = "disabled"
 ```
 
-Git commands still work but without user.name/email (commits require `--author`).
-
-### HTTPS Authentication (readonly mode)
-
-When using readonly mode without credentials:
-
-1. **Token in URL** (not recommended for shared repos):
-   ```bash
-   git remote set-url origin https://TOKEN@github.com/user/repo.git
-   ```
-
-2. **Environment variable**:
-   ```bash
-   GIT_ASKPASS=/path/to/helper devsandbox git push
-   ```
-
-3. **Credential in sandbox**:
-   Store credentials in the sandbox's home directory.
+Git commands work but without user.name/email (commits require `--author`). Use this if you want to allow commits without exposing any credentials.
 
 ## Go
 
