@@ -3,8 +3,10 @@ package network
 import "os/exec"
 
 const (
-	pastaCommand   = "pasta"
-	pastaGatewayIP = "10.0.2.2" // Default gateway for pasta
+	pastaCommand = "pasta"
+	// PastaGatewayIP is the default gateway IP for pasta network isolation.
+	// This IP is mapped to the host's 127.0.0.1 via --map-host-loopback.
+	PastaGatewayIP = "10.0.2.2"
 )
 
 // Pasta implements the Provider interface using pasta (from passt package).
@@ -32,7 +34,7 @@ func (p *Pasta) Available() bool {
 // GatewayIP returns the gateway IP for pasta.
 // This IP (10.0.2.2) is mapped to the host's 127.0.0.1 via --map-host-loopback.
 func (p *Pasta) GatewayIP() string {
-	return pastaGatewayIP
+	return PastaGatewayIP
 }
 
 // NetworkIsolated returns true as pasta provides full network namespace isolation.
