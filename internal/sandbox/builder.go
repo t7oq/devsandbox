@@ -526,31 +526,9 @@ func (b *Builder) applyPersistentOverlay(binding tools.Binding, dest string, san
 		return
 	}
 
-	// Validate dest path to prevent path traversal
-	cleanDest := filepath.Clean(dest)
-	if !filepath.IsAbs(cleanDest) {
-		log.Printf("warning: overlay dest must be absolute path, got: %s", dest)
-		return
-	}
-	if strings.Contains(cleanDest, "..") {
-		log.Printf("warning: overlay dest contains invalid path traversal: %s", dest)
-		return
-	}
-
-	// Create upper/work directories for persistent storage
-	// Use a path based on dest to avoid collisions
-	safePath := strings.ReplaceAll(strings.TrimPrefix(cleanDest, "/"), "/", "_")
-	overlayDir := filepath.Join(sandboxHome, "overlay", safePath)
-	upperDir := filepath.Join(overlayDir, "upper")
-	workDir := filepath.Join(overlayDir, "work")
-
-	// Ensure directories exist with proper error handling
-	if err := os.MkdirAll(upperDir, 0o755); err != nil {
-		log.Printf("warning: failed to create overlay upper dir %s: %v", upperDir, err)
-		return
-	}
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		log.Printf("warning: failed to create overlay work dir %s: %v", workDir, err)
+	upperDir, workDir, err := createOverlayDirs(sandboxHome, dest, "")
+	if err != nil {
+		log.Printf("warning: %v", err)
 		return
 	}
 
@@ -675,25 +653,16 @@ func (b *Builder) applyCustomOverlay(path string, rule mounts.Rule, tmpfs bool) 
 
 	if tmpfs {
 		b.TmpOverlay(path)
-	} else {
-		// Create persistent overlay directories
-		cleanPath := filepath.Clean(path)
-		safePath := strings.ReplaceAll(strings.TrimPrefix(cleanPath, "/"), "/", "_")
-		overlayDir := filepath.Join(b.cfg.SandboxHome, "overlay", "custom", safePath)
-		upperDir := filepath.Join(overlayDir, "upper")
-		workDir := filepath.Join(overlayDir, "work")
-
-		if err := os.MkdirAll(upperDir, 0o755); err != nil {
-			log.Printf("mounts: failed to create overlay upper dir: %v", err)
-			return
-		}
-		if err := os.MkdirAll(workDir, 0o755); err != nil {
-			log.Printf("mounts: failed to create overlay work dir: %v", err)
-			return
-		}
-
-		b.Overlay(upperDir, workDir, path)
+		return
 	}
+
+	upperDir, workDir, err := createOverlayDirs(b.cfg.SandboxHome, path, "custom")
+	if err != nil {
+		log.Printf("mounts: %v", err)
+		return
+	}
+
+	b.Overlay(upperDir, workDir, path)
 }
 
 func (b *Builder) AddProjectBindings() *Builder {
