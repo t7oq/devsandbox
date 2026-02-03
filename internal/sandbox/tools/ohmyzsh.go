@@ -70,17 +70,17 @@ fi`
 }
 
 func (o *OhMyZsh) Check(homeDir string) CheckResult {
+	// oh-my-zsh is a directory, not a binary
 	result := CheckResult{
 		BinaryName:  "omz",
 		InstallHint: "sh -c \"$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\"",
 	}
 
-	omzDir := filepath.Join(homeDir, ".oh-my-zsh")
-	if _, err := os.Stat(omzDir); err == nil {
-		result.ConfigPaths = append(result.ConfigPaths, omzDir)
-		result.Available = true
-	} else {
-		result.Issues = append(result.Issues, "~/.oh-my-zsh not found")
+	result.AddConfigPath(filepath.Join(homeDir, ".oh-my-zsh"))
+	result.Available = len(result.ConfigPaths) > 0
+
+	if !result.Available {
+		result.AddIssue("~/.oh-my-zsh not found")
 	}
 
 	return result

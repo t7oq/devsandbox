@@ -231,49 +231,34 @@ func generateSafeGitconfig(src, dst string) error {
 }
 
 func (g *Git) Check(homeDir string) CheckResult {
-	result := CheckResult{
-		BinaryName:  "git",
-		InstallHint: "Install via system package manager (apt install git, pacman -S git)",
-	}
-
-	path, err := exec.LookPath("git")
-	if err != nil {
-		result.Issues = append(result.Issues, "git binary not found in PATH")
+	result := CheckBinary("git", "Install via system package manager (apt install git, pacman -S git)")
+	if !result.Available {
 		return result
 	}
-
-	result.BinaryPath = path
-	result.Available = true
 
 	// Add mode info
 	switch g.mode {
 	case GitModeReadWrite:
-		result.Issues = append(result.Issues, "mode: readwrite (full access)")
+		result.AddIssue("mode: readwrite (full access)")
 	case GitModeDisabled:
-		result.Issues = append(result.Issues, "mode: disabled")
+		result.AddIssue("mode: disabled")
 	default:
-		result.Issues = append(result.Issues, "mode: readonly (safe, default)")
+		result.AddIssue("mode: readonly (safe, default)")
 	}
 
 	// Check for gitconfig
 	gitconfig := filepath.Join(homeDir, ".gitconfig")
-	if _, err := os.Stat(gitconfig); err == nil {
-		result.ConfigPaths = append(result.ConfigPaths, gitconfig)
-	} else {
-		result.Issues = append(result.Issues, "no ~/.gitconfig found (will use defaults)")
+	result.AddConfigPath(gitconfig)
+	if len(result.ConfigPaths) == 0 {
+		result.AddIssue("no ~/.gitconfig found (will use defaults)")
 	}
 
 	// Check for SSH and GPG in readwrite mode
 	if g.mode == GitModeReadWrite {
-		sshDir := filepath.Join(homeDir, ".ssh")
-		if _, err := os.Stat(sshDir); err == nil {
-			result.ConfigPaths = append(result.ConfigPaths, sshDir)
-		}
-
-		gnupgDir := filepath.Join(homeDir, ".gnupg")
-		if _, err := os.Stat(gnupgDir); err == nil {
-			result.ConfigPaths = append(result.ConfigPaths, gnupgDir)
-		}
+		result.AddConfigPaths(
+			filepath.Join(homeDir, ".ssh"),
+			filepath.Join(homeDir, ".gnupg"),
+		)
 	}
 
 	return result

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -54,23 +53,14 @@ func (f *Fish) ShellInit(shell string) string {
 }
 
 func (f *Fish) Check(homeDir string) CheckResult {
-	result := CheckResult{
-		BinaryName:  "fish",
-		InstallHint: "Install via system package manager",
-	}
+	result := CheckBinary("fish", "Install via system package manager")
 
-	path, err := exec.LookPath("fish")
-	if err == nil {
-		result.BinaryPath = path
-	}
+	// Check config - fish shell availability is based on config existence
+	result.AddConfigPath(filepath.Join(homeDir, ".config", "fish"))
 
-	// Check config
-	fishConfig := filepath.Join(homeDir, ".config", "fish")
-	if _, err := os.Stat(fishConfig); err == nil {
-		result.ConfigPaths = append(result.ConfigPaths, fishConfig)
-		result.Available = true
-	} else {
-		result.Issues = append(result.Issues, "no ~/.config/fish found")
+	if len(result.ConfigPaths) == 0 {
+		result.Available = false
+		result.AddIssue("no ~/.config/fish found")
 	}
 
 	return result
@@ -149,33 +139,18 @@ func (z *Zsh) ShellInit(shell string) string {
 }
 
 func (z *Zsh) Check(homeDir string) CheckResult {
-	result := CheckResult{
-		BinaryName:  "zsh",
-		InstallHint: "Install via system package manager",
-	}
+	result := CheckBinary("zsh", "Install via system package manager")
 
-	path, err := exec.LookPath("zsh")
-	if err == nil {
-		result.BinaryPath = path
-	}
-
-	// Check config paths
-	configPaths := []string{
+	// Check config paths - zsh availability is based on config existence
+	result.AddConfigPaths(
 		filepath.Join(homeDir, ".zshrc"),
 		filepath.Join(homeDir, ".zshenv"),
 		filepath.Join(homeDir, ".config", "zsh"),
-	}
+	)
 
-	for _, p := range configPaths {
-		if _, err := os.Stat(p); err == nil {
-			result.ConfigPaths = append(result.ConfigPaths, p)
-		}
-	}
-
-	result.Available = len(result.ConfigPaths) > 0
-
-	if !result.Available {
-		result.Issues = append(result.Issues, "no zsh config files found")
+	if len(result.ConfigPaths) == 0 {
+		result.Available = false
+		result.AddIssue("no zsh config files found")
 	}
 
 	return result
@@ -294,18 +269,10 @@ func (b *Bash) ShellInit(shell string) string {
 }
 
 func (b *Bash) Check(homeDir string) CheckResult {
-	result := CheckResult{
-		BinaryName:  "bash",
-		InstallHint: "Install via system package manager",
-	}
+	result := CheckBinary("bash", "Install via system package manager")
 
-	path, err := exec.LookPath("bash")
-	if err == nil {
-		result.BinaryPath = path
-	}
-
-	// Check all config paths that we mount
-	configPaths := []string{
+	// Check all config paths that we mount - bash availability is based on config existence
+	result.AddConfigPaths(
 		filepath.Join(homeDir, ".bashrc"),
 		filepath.Join(homeDir, ".bash_profile"),
 		filepath.Join(homeDir, ".profile"),
@@ -319,18 +286,11 @@ func (b *Bash) Check(homeDir string) CheckResult {
 		filepath.Join(homeDir, ".config", "readline"),
 		filepath.Join(homeDir, ".local", "share", "bash"),
 		filepath.Join(homeDir, ".bash_it"),
-	}
+	)
 
-	for _, p := range configPaths {
-		if _, err := os.Stat(p); err == nil {
-			result.ConfigPaths = append(result.ConfigPaths, p)
-		}
-	}
-
-	result.Available = len(result.ConfigPaths) > 0
-
-	if !result.Available {
-		result.Issues = append(result.Issues, "no bash config files found")
+	if len(result.ConfigPaths) == 0 {
+		result.Available = false
+		result.AddIssue("no bash config files found")
 	}
 
 	return result
