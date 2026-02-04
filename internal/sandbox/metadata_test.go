@@ -288,3 +288,19 @@ func TestFormatSize(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectForPruning_SkipsActive(t *testing.T) {
+	sandboxes := []*Metadata{
+		{Name: "active", Active: true, Orphaned: true},
+		{Name: "inactive", Active: false, Orphaned: true},
+	}
+
+	// With --all, active should still be skipped
+	toPrune := SelectForPruning(sandboxes, PruneOptions{All: true})
+	if len(toPrune) != 1 {
+		t.Errorf("Expected 1 to prune (skip active), got %d", len(toPrune))
+	}
+	if toPrune[0].Name != "inactive" {
+		t.Errorf("Expected inactive to be pruned, got %s", toPrune[0].Name)
+	}
+}

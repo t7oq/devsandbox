@@ -59,6 +59,11 @@ func newListCmd() *cobra.Command {
 				return nil
 			}
 
+			// Check active status for each sandbox
+			for _, s := range sandboxes {
+				s.Active = sandbox.IsSessionActive(s.SandboxRoot)
+			}
+
 			// Calculate sizes (default: on)
 			if !noSize {
 				for _, s := range sandboxes {
@@ -124,6 +129,11 @@ directory no longer exists) are removed.`,
 			if len(sandboxes) == 0 {
 				fmt.Println("No sandboxes found.")
 				return nil
+			}
+
+			// Check active status for each sandbox
+			for _, s := range sandboxes {
+				s.Active = sandbox.IsSessionActive(s.SandboxRoot)
 			}
 
 			// Parse duration
@@ -245,6 +255,13 @@ func printTable(sandboxes []*sandbox.Metadata, showSize bool) error {
 		status := ""
 		if s.Orphaned {
 			status = "orphaned"
+		}
+		if s.Active {
+			if status != "" {
+				status = status + ", active"
+			} else {
+				status = "active"
+			}
 		}
 
 		projectDir := s.ProjectDir

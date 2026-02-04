@@ -24,6 +24,7 @@ type Metadata struct {
 	SandboxRoot string `json:"-"`
 	SizeBytes   int64  `json:"-"`
 	Orphaned    bool   `json:"-"` // True if project_dir no longer exists
+	Active      bool   `json:"-"` // Session currently running (lock held)
 }
 
 // SaveMetadata writes metadata to the sandbox directory
@@ -196,10 +197,6 @@ func SelectForPruning(sandboxes []*Metadata, opts PruneOptions) []*Metadata {
 		return nil
 	}
 
-	if opts.All {
-		return sandboxes
-	}
-
 	// Sort by last used (most recent first)
 	sorted := make([]*Metadata, len(sandboxes))
 	copy(sorted, sandboxes)
@@ -211,6 +208,17 @@ func SelectForPruning(sandboxes []*Metadata, opts PruneOptions) []*Metadata {
 	cutoff := time.Now().Add(-opts.OlderThan)
 
 	for i, m := range sorted {
+		// Skip active sessions (lock held)
+		if m.Active {
+			continue
+		}
+
+		// If --all, include everything (except active, handled above)
+		if opts.All {
+			toPrune = append(toPrune, m)
+			continue
+		}
+
 		// Keep N most recently used
 		if opts.Keep > 0 && i < opts.Keep {
 			continue

@@ -145,6 +145,13 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Acquire session lock (released automatically on exit)
+	lockFile, err := sandbox.AcquireSessionLock(cfg.SandboxRoot)
+	if err != nil {
+		return fmt.Errorf("failed to acquire session lock: %w", err)
+	}
+	defer func() { _ = lockFile.Close() }()
+
 	// Handle proxy mode
 	var proxyServer *proxy.Server
 	var netProvider network.Provider
