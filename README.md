@@ -1,212 +1,245 @@
 # devsandbox
 
-A sandbox for running untrusted development tools. Uses [bubblewrap](https://github.com/containers/bubblewrap)
-on Linux or Docker containers on macOS for filesystem isolation, and optionally [pasta](https://passt.top/) for
-network isolation (proxy mode on Linux).
+Sandbox your AI coding assistants. Run Claude Code, Copilot, aider, and other tools without exposing SSH keys, cloud credentials, or secrets.
 
-On Linux, devsandbox ships with embedded bwrap and pasta binaries — no system packages required.
+## The Problem
 
-## Why?
+AI coding assistants execute shell commands, install packages, and make network requests on your machine -- with full access to your `~/.ssh` keys, `~/.aws` credentials, `.env` secrets, and everything else. An AI agent with unrestricted access could read your `~/.ssh/id_ed25519`, exfiltrate `~/.aws/credentials` via an API call, or `rm -rf` your home directory.
 
-AI coding assistants like Claude Code, GitHub Copilot, and others can execute arbitrary commands on your system. While
-useful, this creates security risks—especially when working with untrusted code or allowing agents to run with elevated
-permissions.
+devsandbox removes that risk. It wraps any command in a sandbox that provides full read/write access to your project and all your development tools, while blocking access to credentials, keys, and secrets. An optional proxy mode logs every HTTP/HTTPS request for inspection.
 
-`devsandbox` provides a security boundary that:
+## Quickstart
 
-- Preserves access to your development tools
-- Allows full read/write access to your project directory
-- Keeps SSH keys, cloud credentials, and secrets out of reach
-- Optionally routes all network traffic through an inspectable proxy
-
-## Quick Start
-
-### Installation
-
-**Linux (bwrap backend):**
-
-No system packages required — devsandbox includes embedded bwrap and pasta binaries.
-To use system-installed binaries instead, set `use_embedded = false` in [configuration](docs/configuration.md).
-
-Optionally install system packages (used as fallback if embedded extraction fails):
-- [bubblewrap](https://github.com/containers/bubblewrap) — sandbox isolation
-- [passt](https://passt.top/) — network isolation for proxy mode
-
-**macOS (docker backend):**
-- [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) (required), or
-- [OrbStack](https://orbstack.dev/) (lightweight alternative), or
-- [Colima](https://github.com/abiosoft/colima) (free, open-source)
-
-**Optional (all platforms):**
-- [mise](https://mise.jdx.dev/) - for tool version management
+**Install:**
 
 ```bash
-# Linux: No packages required (embedded binaries included)
-# Optional: install system packages as fallback
-# Arch Linux:    sudo pacman -S bubblewrap passt
-# Debian/Ubuntu: sudo apt install bubblewrap passt
-# Fedora:        sudo dnf install bubblewrap passt
-
-# macOS: Install Docker Desktop
-# Download from https://docs.docker.com/desktop/install/mac-install/
-
-# Install devsandbox via mise
 mise install github:zekker6/devsandbox
 ```
 
-> **First run on macOS:** The first sandbox start downloads the base Docker image (~200MB). Subsequent starts reuse the cached image and complete in 1-2 seconds. Run `devsandbox doctor` after installation to verify your setup.
+> Homebrew is not currently available. For direct binary download, see [Installation Details](#installation-details).
+
+**Sandbox your AI agent:**
+
+```bash
+# 1. Run Claude Code in the sandbox
+devsandbox claude --dangerously-skip-permissions
+
+# 2. Verify what's protected
+devsandbox --info
+```
+
+Everything after `devsandbox` is passed to the sandboxed command. `--dangerously-skip-permissions` is a Claude Code flag that skips permission prompts -- safe inside the sandbox because devsandbox provides the security boundary.
+
+**Works with:** Claude Code, GitHub Copilot, aider, Cursor, Continue, Cline, OpenCode, and any CLI-based development tool.
+
+That's it. No config files needed. On Linux, devsandbox includes embedded binaries -- zero dependencies. On macOS, a Docker runtime is required (see [Installation Details](#installation-details)).
+
+Run `devsandbox doctor` to verify your setup.
+
+> **macOS:** devsandbox runs your code inside a lightweight Linux container (Debian slim) via Docker. Your project files are mounted into the container, so edits sync bidirectionally. Ensure your Docker runtime is running before using devsandbox. The first start downloads a base Docker image (~200MB); subsequent starts reuse Docker layer caching and complete in 1-2 seconds.
+
+## What Your AI Agent CAN and CANNOT Do
+
+**CAN:** Read/write your project files, run build commands, install dependencies, make API calls (logged in proxy mode).
+
+**CANNOT:** Read SSH keys, access cloud credentials (AWS/Azure/GCloud), read `.env` secrets, see other projects, push to git (by default), or modify your system.
+
+### Security Details
+
+| Resource | Default Access |
+|---|---|
+| Project directory | Read/Write |
+| `.env` / `.env.*` files | Hidden (masked with `/dev/null`) |
+| `~/.ssh` | Not mounted |
+| `~/.aws`, `~/.azure`, `~/.gcloud` | Not mounted |
+| `~/.gitconfig` | Sanitized (user.name/email only) |
+| `.git` directory | Read-only (no commits, no credentials) |
+| mise-managed tools | Read-only |
+| Network (default) | Full access |
+| Network (proxy mode) | Isolated and logged |
+
+Everything is configurable. See [Configuration](docs/configuration.md) for details.
+
+## Features
+
+- **Zero-config security** -- SSH keys, cloud credentials, `.env` files, and git credentials are blocked by default
+- **Your tools, your shell** -- mise-managed tools, shell configs, editor setups (nvim, starship, tmux) all work inside the sandbox
+- **MITM proxy** -- optional traffic inspection with log viewing, filtering, and export
+- **HTTP filtering** -- whitelist/blacklist domains, or interactively approve requests one at a time
+- **Cross-platform** -- [bubblewrap](https://github.com/containers/bubblewrap) namespaces on Linux (sub-second startup), Docker containers on macOS
+- **Per-project isolation** -- each project gets its own sandbox home, caches, and logs
+- **Git modes** -- readonly (default), readwrite (with SSH/GPG), or disabled
+
+## How It Works
+
+**Linux:** Uses [bubblewrap](https://github.com/containers/bubblewrap) to create namespace-based isolation. No root privileges, no Docker, no system packages required -- bwrap and pasta binaries are embedded. Startup is sub-second.
+
+**macOS:** Uses Docker containers with volume mounts that mirror the bwrap behavior. Named volumes provide near-native filesystem performance. Containers are cached for 1-2 second restarts.
+
+Both backends automatically detect your shell, tools, and editor configs and make them available read-only inside the sandbox.
+
+## Usage Examples
+
+```bash
+# Interactive sandbox shell
+devsandbox
+
+# Run any command in the sandbox
+devsandbox npm install
+devsandbox go test ./...
+devsandbox cargo build
+
+# AI assistant with traffic monitoring
+devsandbox --proxy claude --dangerously-skip-permissions
+
+# View what the AI accessed
+devsandbox logs proxy --last 50
+
+# Follow traffic in real-time (in a second terminal)
+devsandbox logs proxy -f
+
+# Whitelist-only network access
+devsandbox --proxy --filter-default=block \
+  --allow-domain="*.github.com" \
+  --allow-domain="api.anthropic.com"
+
+# Choose isolation backend explicitly
+devsandbox --isolation=docker npm install
+
+# Ephemeral sandbox (removed after exit)
+devsandbox --rm
+```
+
+## Git Integration
+
+By default, `.git` is mounted read-only -- you can view history, diff, and status, but commits are blocked and no credentials are exposed.
+
+| Mode | `.git` | Commits | Credentials |
+|---|---|---|---|
+| `readonly` | read-only | blocked | none **(default)** |
+| `readwrite` | read-write | allowed | SSH, GPG, credentials |
+| `disabled` | read-write | allowed | none |
+
+```toml
+# ~/.config/devsandbox/config.toml
+[tools.git]
+mode = "readwrite"  # for trusted projects that need push/sign
+```
+
+## Proxy Mode -- Monitor Your AI Agent's Network Activity
+
+Route all HTTP/HTTPS traffic through a local MITM proxy. See every API call your AI agent makes in real-time, block suspicious domains, or interactively approve each request.
+
+```bash
+# Enable proxy
+devsandbox --proxy
+
+# View logs
+devsandbox logs proxy --stats        # Summary statistics
+devsandbox logs proxy --errors       # Failed requests only
+devsandbox logs proxy --json         # JSON export for scripting
+
+# Interactive request approval
+devsandbox --proxy --filter-default=ask
+# Then in another terminal:
+devsandbox proxy monitor
+```
+
+On Linux, proxy mode uses [pasta](https://passt.top/) for network namespace isolation (embedded, no install needed). On macOS, it uses per-session Docker networks.
+
+See [Proxy Mode docs](docs/proxy.md) for filtering rules, log formats, and remote logging setup.
+
+## Installation Details
+
+**Linux:**
+
+Requirements:
+- Linux kernel with unprivileged user namespaces enabled (verify: `unshare --user true` should succeed silently)
+- No system packages required (bwrap and pasta binaries are embedded)
+
+```bash
+# Option 1: mise
+mise install github:zekker6/devsandbox
+
+# Option 2: Download binary
+curl -L https://github.com/zekker6/devsandbox/releases/latest/download/devsandbox-linux-amd64.tar.gz | tar xz
+sudo mv devsandbox /usr/local/bin/
+```
+
+To use system-installed binaries instead of embedded ones, set `use_embedded = false` in [configuration](docs/configuration.md).
+
+Optional system packages (fallback if embedded extraction fails). Note: the `passt` package provides the `pasta` binary used for network namespace isolation.
+
+```bash
+# Arch Linux
+sudo pacman -S bubblewrap passt
+
+# Debian/Ubuntu
+sudo apt install bubblewrap passt
+
+# Fedora
+sudo dnf install bubblewrap passt
+```
+
+**macOS:** Install a Docker runtime (ensure it is running before using devsandbox):
+- [OrbStack](https://orbstack.dev/) -- recommended for Apple Silicon (fastest startup, lowest resource usage)
+- [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) -- most widely tested
+- [Colima](https://github.com/abiosoft/colima) -- free and open-source
 
 **Build from source:**
 
 ```bash
+# Requires: Go 1.22+ and Task (https://taskfile.dev/)
+# Or use mise to install dependencies: mise install
 task build
-# or: go build -o bin/devsandbox ./cmd/devsandbox
 ```
 
-### Basic Usage
+## Quick Reference
 
 ```bash
-# Interactive shell in sandbox
-devsandbox
-
-# Run a specific command
-devsandbox npm install
-devsandbox bun run dev
-
-# Run AI coding assistant with reduced risk
-devsandbox claude --dangerously-skip-permissions
-
-# Choose isolation backend (auto, bwrap, docker)
-devsandbox --isolation=docker npm install
-
-# Using mise-managed tools inside sandbox
-mise exec "github:zekker6/devsandbox@latest" -- claude --dangerously-skip-permissions
-
-# Show sandbox configuration
-devsandbox --info
-
-# Check installation
-devsandbox doctor
-```
-
-### Proxy Mode
-
-Route all HTTP/HTTPS traffic through an inspectable proxy:
-
-```bash
-# Enable proxy mode
-devsandbox --proxy
-
-# Run command with traffic logging
-devsandbox --proxy npm install
-
-# View captured traffic
-devsandbox logs proxy --last 50
-
-# Follow logs in real-time
-devsandbox logs proxy -f
-```
-
-## Security Model
-
-| Resource                          | Access                     |
-|-----------------------------------|----------------------------|
-| Project directory                 | Read/Write                 |
-| `.env` files                      | Hidden                     |
-| `~/.ssh`                          | Not mounted (configurable) |
-| `~/.aws`, `~/.azure`, `~/.gcloud` | Not mounted                |
-| Git config                        | Safe mode (configurable)   |
-| mise-managed tools                | Read-only (configurable)   |
-| Network (default)                 | Full access                |
-| Network (proxy mode)              | Isolated, logged           |
-
-### Git Integration
-
-By default, git runs in **readonly** mode where `.git` is mounted read-only, preventing commits. This is the safest option for running untrusted code.
-
-| Mode | .git | Commits | Credentials |
-|------|------|---------|-------------|
-| `readonly` | read-only | ❌ blocked | ❌ none **(default)** |
-| `readwrite` | read-write | ✅ allowed | ✅ SSH, GPG, credentials |
-| `disabled` | read-write | ✅ allowed | ❌ none |
-
-Configure in `~/.config/devsandbox/config.toml`:
-
-```toml
-[tools.git]
-mode = "readonly"  # or "readwrite", "disabled"
+devsandbox                          # Interactive sandbox shell
+devsandbox <command>                # Run command in sandbox
+devsandbox --proxy                  # Enable proxy mode
+devsandbox --rm                     # Ephemeral sandbox
+devsandbox --info                   # Show sandbox configuration
+devsandbox doctor                   # Check installation
+devsandbox config init              # Generate config file
+devsandbox sandboxes list           # List all sandboxes
+devsandbox sandboxes prune          # Remove orphaned sandboxes
+devsandbox logs proxy               # View proxy logs
+devsandbox logs proxy -f            # Follow logs in real-time
+devsandbox tools list               # List available tools
+devsandbox tools check              # Verify tool setup
+devsandbox image build              # Build Docker image (macOS)
 ```
 
 ## Documentation
 
-- **[Sandboxing](docs/sandboxing.md)** - How isolation works, data locations, managing sandboxes
-- **[Proxy Mode](docs/proxy.md)** - Network isolation, traffic inspection, viewing logs
-- **[Tools](docs/tools.md)** - mise integration, supported tools, editor setup
-- **[Configuration](docs/configuration.md)** - Config file reference, remote logging (syslog, OTLP)
-- **[Use Cases](docs/use-cases.md)** - Workflows, shell aliases, autocompletion setup
-
-## Quick Reference
-
-### Managing Sandboxes
-
-```bash
-devsandbox sandboxes list           # List all sandboxes
-devsandbox sandboxes prune          # Remove orphaned sandboxes
-devsandbox sandboxes prune --all    # Remove all sandboxes
-```
-
-### Viewing Logs
-
-```bash
-devsandbox logs proxy               # View proxy request logs
-devsandbox logs proxy -f            # Follow/tail logs
-devsandbox logs proxy --errors      # Show only errors
-devsandbox logs proxy --stats       # Show statistics
-devsandbox logs internal            # View internal error logs
-```
-
-### Inspecting Tools
-
-```bash
-devsandbox tools list               # List available tools
-devsandbox tools info mise          # Show tool details
-devsandbox tools check              # Verify tool setup
-```
-
-### Diagnostics & Image Management
-
-```bash
-devsandbox doctor                   # Check installation and dependencies
-devsandbox image build              # Build Docker sandbox image without starting
-```
-
-### Configuration
-
-```bash
-devsandbox config init              # Generate config file
-```
-
-Config file: `~/.config/devsandbox/config.toml`
-
-```toml
-[proxy]
-enabled = false
-port = 8080
-```
+| Page | Contents |
+|---|---|
+| [Sandboxing](docs/sandboxing.md) | Isolation backends, security model, filesystem layout, overlay mounts, custom mounts, Docker backend details |
+| [Proxy Mode](docs/proxy.md) | Traffic inspection, log viewing/filtering/export, HTTP filtering, ask mode, remote logging |
+| [Tools](docs/tools.md) | mise integration, shell/editor/prompt setup, AI assistant configs, Git modes, Docker socket proxy |
+| [Configuration](docs/configuration.md) | Config file reference, per-project configs, conditional includes, port forwarding, credential injection |
+| [Use Cases](docs/use-cases.md) | Shell aliases, autocompletion, development workflows, security monitoring scripts |
 
 ## Limitations
 
-**Linux (bwrap backend):**
-- Requires user namespaces enabled
-- MITM proxy may break certificate pinning
+**Linux (bwrap):**
+- Requires unprivileged user namespaces (see [Troubleshooting](docs/sandboxing.md#troubleshooting) for distro-specific guidance)
+- SELinux or AppArmor may restrict namespace operations (see [Security Modules](docs/sandboxing.md#security-modules))
+- MITM proxy may break tools with certificate pinning
+- GUI applications are not supported (no display server forwarding)
 
-**macOS (docker backend):**
-- Requires Docker Desktop running
-- File operations may be slower due to volume mounts
+**macOS (Docker):**
+- Requires a running Docker daemon
+- Project directory access goes through macOS virtualization (VirtioFS/gRPC-FUSE), which may be slower for I/O-heavy operations. Sandbox-internal operations (npm install, Go builds) use named Docker volumes with near-native speed.
+- File watching (hot reload) may require polling mode. See [File Watching Limitations](docs/sandboxing.md#file-watching-limitations) for workarounds.
 - Network isolation uses HTTP_PROXY instead of pasta
 
 **Both:**
-- Docker access is read-only (no container creation/deletion, see [docs/tools.md](docs/tools.md#docker))
+- Docker socket access is read-only (no container creation/deletion) -- see [Tools docs](docs/tools.md#docker)
+- No nested Docker (cannot run Docker inside the sandbox)
 
 ## License
 

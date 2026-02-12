@@ -1,5 +1,7 @@
 # Proxy Mode
 
+Network isolation, traffic inspection, and HTTP filtering.
+
 Proxy mode routes all HTTP/HTTPS traffic through a local MITM (Man-in-the-Middle) proxy for inspection and logging.
 The sections below describe bwrap backend behavior by default. The Docker backend achieves the same goal with different
 mechanisms — see [Backend-Specific Behavior](#backend-specific-behavior) for details.
@@ -381,6 +383,32 @@ scope = "host"
 reason = "Internal network blocked"
 ```
 
+### AI Agent Filtering Example
+
+Lock down an AI coding assistant to only communicate with known services:
+
+```toml
+[proxy.filter]
+default_action = "block"
+
+[[proxy.filter.rules]]
+pattern = "api.anthropic.com"
+action = "allow"
+scope = "host"
+
+[[proxy.filter.rules]]
+pattern = "*.github.com"
+action = "allow"
+scope = "host"
+
+[[proxy.filter.rules]]
+pattern = "registry.npmjs.org"
+action = "allow"
+scope = "host"
+```
+
+You can generate filter rules from a "known good" session using `devsandbox proxy filter generate` (see [Generate Filter Rules](#generate-filter-rules-from-logs)).
+
 ### Pattern Types
 
 Default is `glob`. Patterns containing regex characters (`^$|()[]{}\+`) are auto-detected as regex.
@@ -403,7 +431,7 @@ Default is `host`.
 
 ### Ask Mode
 
-In ask mode, unmatched requests require user approval via a separate monitor terminal.
+In ask mode, unmatched requests require user approval via a separate monitor terminal. This is particularly useful when running AI agents autonomously -- you can approve or block each network request the agent makes, giving you real-time control over what data leaves your machine.
 
 **Step 1**: Start the sandbox with ask mode:
 
@@ -529,3 +557,13 @@ devsandbox doctor
 1. Verify proxy mode is enabled: `devsandbox --proxy --info`
 2. Check the log directory exists
 3. Make HTTP requests (not just TCP connections)
+
+## See Also
+
+- [Sandboxing](sandboxing.md) -- filesystem and process isolation, security model
+- [Configuration: Remote Logging](configuration.md#remote-logging) -- send proxy logs to syslog or OTLP
+- [Configuration: Credential Injection](configuration.md#proxy-credentials) -- inject tokens into requests without exposing them to the sandbox
+- [Configuration: Port Forwarding](configuration.md#port-forwarding) -- forward ports between host and sandbox (requires proxy mode)
+- [Use Cases: Security Monitoring](use-cases.md#security-monitoring) -- real-time monitoring and post-session audit scripts
+
+[Back to docs index](README.md) | [Back to README](../README.md)

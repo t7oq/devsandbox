@@ -1,6 +1,6 @@
 # Use Cases
 
-Common workflows and setup guides for devsandbox.
+Workflows, shell setup, aliases, and practical examples for devsandbox.
 
 ## AI Coding Assistants
 
@@ -19,6 +19,8 @@ devsandbox claude --dangerously-skip-permissions
 devsandbox --proxy claude --dangerously-skip-permissions
 ```
 
+Everything after `devsandbox` is passed to the sandboxed command. `--dangerously-skip-permissions` is a Claude Code flag that skips permission prompts -- safe inside the sandbox because devsandbox provides the security boundary.
+
 **What's protected:**
 
 - SSH keys are not available (by default)
@@ -33,6 +35,63 @@ devsandbox --proxy claude --dangerously-skip-permissions
 - Install dependencies
 - Make API calls (visible in proxy logs)
 
+#### Running Claude Code Autonomously
+
+A complete workflow for autonomous AI coding with monitoring:
+
+```bash
+# 1. Basic sandboxed run
+devsandbox claude --dangerously-skip-permissions
+
+# 2. Enable git readwrite mode for Claude to commit
+# In ~/.config/devsandbox/config.toml or .devsandbox.toml:
+#   [tools.git]
+#   mode = "readwrite"
+
+# 3. Set up GitHub credential injection (token stays on host)
+# In ~/.config/devsandbox/config.toml:
+#   [proxy]
+#   enabled = true
+#   [proxy.credentials.github]
+#   enabled = true
+
+# 4. Run with proxy monitoring
+devsandbox --proxy claude --dangerously-skip-permissions
+
+# 5. In another terminal, watch traffic in real-time
+devsandbox logs proxy -f
+
+# 6. Restrict network access to known domains
+devsandbox --proxy --filter-default=block \
+  --allow-domain="api.anthropic.com" \
+  --allow-domain="*.github.com" \
+  --allow-domain="registry.npmjs.org" \
+  claude --dangerously-skip-permissions
+
+# 7. Post-session audit
+devsandbox logs proxy --stats
+devsandbox logs proxy --errors
+```
+
+See [Configuration: AI Agent Config](../docs/configuration.md#ai-agent-recommended-config) for a complete config example.
+
+### aider
+
+```bash
+# Run aider in sandbox
+devsandbox aider
+
+# With proxy monitoring
+devsandbox --proxy aider
+```
+
+### OpenCode
+
+```bash
+# Run opencode in sandbox
+devsandbox opencode
+```
+
 ### GitHub Copilot
 
 Copilot works inside editors running in the sandbox:
@@ -44,6 +103,10 @@ devsandbox nvim
 # VS Code (if installed via mise or system)
 devsandbox code .
 ```
+
+### Other AI Tools
+
+Any CLI-based AI coding tool works in the sandbox. Electron-based desktop apps (Cursor, VS Code) may require the Docker backend with additional configuration.
 
 ## Shell Autocompletion
 
@@ -207,6 +270,8 @@ devsandbox npm test
 devsandbox npm run build
 ```
 
+> **macOS:** File watching (hot reload) may require polling mode. Set `WATCHPACK_POLLING=true devsandbox npm run dev` or see [File Watching Limitations](sandboxing.md#file-watching-limitations) for other frameworks.
+
 ### Python Project
 
 ```bash
@@ -336,3 +401,12 @@ curl https://api.example.com
 # Then in sandbox
 devsandbox --proxy curl https://api.example.com
 ```
+
+## See Also
+
+- [Sandboxing](sandboxing.md) -- security model and isolation details
+- [Proxy Mode](proxy.md) -- traffic inspection, HTTP filtering, log formats
+- [Tools](tools.md) -- tool-specific configuration (git, mise, editors, AI assistants)
+- [Configuration](configuration.md) -- full config reference, per-project settings
+
+[Back to docs index](README.md) | [Back to README](../README.md)

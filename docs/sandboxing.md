@@ -1,5 +1,7 @@
 # Sandboxing
 
+How filesystem, process, and network isolation works in devsandbox.
+
 devsandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux or Docker containers on macOS to create
 isolated environments for running untrusted code. On Linux, bwrap and pasta binaries are embedded — no system packages
 required. To use system-installed binaries instead, see [configuration](configuration.md).
@@ -67,8 +69,7 @@ isolation = "docker"  # "auto", "bwrap", or "docker"
 - `~/.gcloud` (Google Cloud SDK credentials)
 - `~/.config/gcloud` (Google Cloud config)
 
-**Environment Files** - All `.env` and `.env.*` files in your project are overlaid with `/dev/null`, preventing secrets
-from being read by sandboxed code.
+**Environment Files** - Files matching `.env` and `.env.*` patterns (e.g., `.env`, `.env.local`, `.env.production`) in your project are overlaid with `/dev/null`, preventing secrets from being read by sandboxed code. Files like `config.env` that don't start with `.env` are not hidden.
 
 **Git Credentials** - By default, `~/.gitconfig` is replaced with a sanitized copy containing only user.name and email.
 Use `git.mode = "readwrite"` for full git access.
@@ -139,6 +140,8 @@ Sandbox data follows XDG conventions:
     ├── proxy/               # HTTP request logs
     └── internal/            # Internal error logs
 ```
+
+> **macOS (Docker backend):** The sandbox home directory is stored as a named Docker volume rather than at the host path shown above. Use `docker volume ls | grep devsandbox` to see volumes, or `devsandbox sandboxes list` to view all sandboxes with their storage type.
 
 ### Project Naming
 
@@ -250,20 +253,44 @@ Then verify with `devsandbox doctor`.
 
 **"User namespaces not enabled"**
 
-- Check kernel config: `cat /proc/sys/kernel/unprivileged_userns_clone`
-- Enable: `sudo sysctl kernel.unprivileged_userns_clone=1`
+This varies by distribution:
+
+- **Arch Linux / Fedora**: User namespaces are enabled by default. If you see this error, check for a hardened kernel with `kernel.userns_restrict` and adjust if needed.
+- **Debian / Ubuntu (< 23.10)**: May need `sudo sysctl -w kernel.unprivileged_userns_clone=1`. The sysctl `kernel.unprivileged_userns_clone` is a Debian/Ubuntu-specific patch and does not exist on all kernels.
+- **Ubuntu 23.10+**: AppArmor may restrict unprivileged user namespaces even when the sysctl is set. Run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` or create an AppArmor profile exception for devsandbox.
+- **Hardened kernels**: Check `kernel.userns_restrict` and adjust if needed.
+
+If namespace restrictions cannot be resolved, use the Docker backend instead (`--isolation=docker`).
 
 **"bwrap not found"**
 
 - devsandbox includes embedded bwrap — this error means extraction failed and no system package is installed
 - Check `devsandbox doctor` output for details (embedded vs system source)
-- Install bubblewrap as a fallback: see [README](../README.md#installation)
+- Install bubblewrap as a fallback: see [README](../README.md#installation-details)
 - To disable embedded binaries and use only system packages, set `use_embedded = false` in [configuration](configuration.md)
 
 **"Permission denied" on project files**
 
 - Ensure your user owns the project directory
 - Check for ACLs that might interfere
+
+### Security Modules
+
+devsandbox does not include SELinux or AppArmor handling. On systems with these security modules, sandbox operations may be blocked.
+
+**SELinux (Fedora, RHEL, CentOS):**
+
+- SELinux policy may block bwrap namespace operations
+- Workaround: `sudo setsebool -P user_namespace_allowed 1` or create a custom policy module
+- Check audit log: `sudo ausearch -m avc -ts recent`
+
+**AppArmor (Ubuntu, Debian):**
+
+- On Ubuntu 23.10+, `kernel.apparmor_restrict_unprivileged_userns=1` is enabled by default
+- Workaround: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`
+- Alternative: Create an AppArmor profile exception for devsandbox
+
+**Fallback:** If security module restrictions cannot be resolved, use the Docker backend (`--isolation=docker`) which avoids direct namespace creation.
 
 ## Overlay Filesystem
 
@@ -577,13 +604,13 @@ Docker Desktop (or equivalent) should be configured with at least:
 - **RAM**: 4 GB+
 - **CPUs**: 2+
 
-Lower values work but may slow builds and tool installations inside the sandbox.
+These are Docker Desktop minimum allocations. devsandbox containers use these resources but can be further constrained via `[sandbox.docker.resources]` in your config. The container limit cannot exceed what Docker Desktop allocates. Lower values work but may slow builds and tool installations inside the sandbox.
 
 #### Volume Performance
 
 On macOS, the sandbox home directory uses a **named Docker volume** instead of a bind mount. This is necessary because bind mounts on macOS go through a virtualization layer (VirtioFS or gRPC-FUSE) that can be 2-5x slower than native filesystem access.
 
-Named volumes store data inside the Docker VM's filesystem, providing near-native performance for operations like `npm install`, Go builds, and other I/O-heavy tasks. The tradeoff is that volume contents are not directly accessible from the macOS Finder — use `devsandbox sandboxes list` to view sizes and `devsandbox sandboxes prune --volumes` to reclaim space.
+Named volumes store data inside the Docker VM's filesystem, providing near-native performance for operations like `npm install`, Go builds, and other I/O-heavy tasks. The tradeoff is that volume contents are not directly accessible from the macOS Finder — use `devsandbox sandboxes list` to view sizes and `devsandbox sandboxes prune` to reclaim space. To see Docker volumes directly: `docker volume ls | grep devsandbox`.
 
 #### File Watching Limitations
 
@@ -630,10 +657,19 @@ Container creation, deletion, and image manipulation are blocked by the proxy fi
 - **User namespaces required** - Most modern distros have this enabled
 - **No nested containers** - Running Docker inside the sandbox is not supported
 - **Some tools may break** - Tools that require specific system access may fail
-- **Overlay requires kernel support** - Most modern kernels (3.18+) support overlayfs
+- **Overlay requires kernel support** - Unprivileged overlayfs (inside user namespaces) requires kernel 5.11+
 
 ### Docker Backend (All Platforms)
 - **Docker required** - Docker Desktop or Docker Engine must be installed and running
 - **No pasta network** - Uses HTTP_PROXY for network isolation instead
 - **Performance on macOS** - File operations may be slower due to volume mounts
 - **Image build** - First run builds the image from a Dockerfile (requires downloading the base image ~200MB)
+
+## See Also
+
+- [Proxy Mode](proxy.md) -- network isolation and traffic inspection
+- [Tools](tools.md) -- how development tools are made available inside the sandbox
+- [Configuration](configuration.md) -- config file reference, custom mounts, overlay settings
+- [Use Cases](use-cases.md) -- workflows and shell setup
+
+[Back to docs index](README.md) | [Back to README](../README.md)

@@ -1,5 +1,7 @@
 # Configuration
 
+Complete configuration reference for devsandbox.
+
 devsandbox can be configured via a TOML file at `~/.config/devsandbox/config.toml`.
 
 ## Getting Started
@@ -80,7 +82,11 @@ When multiple fields are set, priority is: `value` > `env` > `file`. Set exactly
 - Unknown injector names in the config produce a warning and are skipped.
 - The injector never overwrites an existing `Authorization` header on the request.
 
+> **AI agent workflow:** Credential injection is particularly useful for AI coding assistants like Claude Code that need GitHub API access. The token stays on the host -- the AI agent never sees it, but its API requests to github.com are automatically authenticated.
+
 ### Avoiding GitHub Rate Limits (Recommended for macOS)
+
+This is optional but strongly recommended. Without it, tool installation via mise inside the sandbox may hit GitHub's 60 requests/hour limit, causing transient failures during initial setup.
 
 On macOS, devsandbox uses the Docker backend. When [mise](tools.md#tool-management-with-mise) installs or updates tools inside the sandbox, it downloads releases from GitHub. Unauthenticated GitHub API requests are limited to **60 per hour** — easily exhausted when populating the tool cache for the first time.
 
@@ -269,7 +275,7 @@ sandbox_port = 5432
 | `host_port`   | Yes      | -       | Port on host side (1-65535)              |
 | `sandbox_port`| Yes      | -       | Port on sandbox side (1-65535)           |
 
-**Note:** Port forwarding requires network isolation. Enable proxy mode (`--proxy`) or port forwarding will fail with an error.
+**Note:** Port forwarding requires proxy mode because network namespace isolation (via pasta on Linux or per-session Docker networks on macOS) is only active in proxy mode. Without it, the sandbox shares the host network stack and ports are directly accessible. Enable proxy mode (`--proxy`) or port forwarding will fail with an error.
 
 #### Examples
 
@@ -299,7 +305,7 @@ host_port = 5432
 sandbox_port = 5432
 ```
 
-Inside sandbox, connect to `10.0.2.2:5432` (pasta gateway IP).
+Inside sandbox, connect to `10.0.2.2:5432` (pasta gateway IP on Linux) or `host.docker.internal:5432` (Docker backend on macOS).
 
 ### Overlay Settings
 
@@ -651,12 +657,14 @@ path = "~/.config/devsandbox/acme.toml"
 ```
 
 **Pattern syntax:**
+
 - `dir:` prefix required
 - `*` matches any single directory level
 - `**` matches any number of directories (recursive)
 - `~` expands to home directory
 
 **Include file format:**
+
 - Same structure as main config
 - Nested `[[include]]` blocks are ignored
 - Missing include files produce a warning and are skipped. Parse errors in include files are fatal.
@@ -710,7 +718,7 @@ devsandbox trust remove
 devsandbox trust remove /path/to/project
 ```
 
-**Non-interactive mode:** In scripts or CI, local configs are skipped with a warning. Use `devsandbox trust add` to pre-approve configs without interactive prompts.
+**Non-interactive mode:** When running non-interactively (e.g., via an AI assistant or in CI), untrusted local configs are skipped with a warning. Pre-approve configs with `devsandbox trust add` before running in non-interactive mode.
 
 ### Config Priority
 
@@ -736,6 +744,16 @@ devsandbox --rm             # Docker: don't keep container; bwrap: remove sandbo
 ```
 
 **Merge rules:**
+
 - Scalar values: later source wins
 - Maps (`[tools]`): deep merge
 - Arrays (`[[proxy.filter.rules]]`): concatenate (later rules have higher priority)
+
+## See Also
+
+- [Sandboxing](sandboxing.md) -- security model, custom mounts, overlay filesystem details
+- [Proxy Mode](proxy.md) -- proxy usage, log viewing, HTTP filtering
+- [Tools](tools.md) -- tool-specific behavior (git modes, mise, Docker socket proxy)
+- [Use Cases](use-cases.md) -- practical workflows using these configuration options
+
+[Back to docs index](README.md) | [Back to README](../README.md)

@@ -1,5 +1,7 @@
 # Tools
 
+How development tools are made available inside the sandbox.
+
 devsandbox makes development tools available inside the sandbox while maintaining security boundaries.
 
 ## Inspecting Tools
@@ -271,6 +273,8 @@ For other editors, mount their config directories manually or use the sandbox ho
 
 ## AI Coding Assistants
 
+AI coding assistants execute arbitrary code -- installing packages, running builds, making network requests. Running them inside devsandbox ensures they can do their job without accessing your credentials, keys, or secrets.
+
 ### Claude Code
 
 Claude Code is fully supported:
@@ -279,9 +283,11 @@ Claude Code is fully supported:
 # Run Claude Code in sandbox
 devsandbox claude
 
-# With permissions disabled (recommended)
+# With permissions disabled (recommended in sandbox)
 devsandbox claude --dangerously-skip-permissions
 ```
+
+Everything after `devsandbox` is passed to the sandboxed command. `--dangerously-skip-permissions` is a Claude Code flag that skips permission prompts -- safe inside the sandbox because devsandbox provides the security boundary.
 
 Configuration directories are mounted read-write to allow Claude to save settings:
 
@@ -291,9 +297,34 @@ Configuration directories are mounted read-write to allow Claude to save setting
 ~/.claude.json      → Sandbox (read-write)
 ```
 
+These directories are isolated to the sandbox home -- not your real host directories. Claude's conversation state and settings persist across sandbox sessions for the same project but are not shared with your host.
+
+### aider
+
+[aider](https://aider.chat/) works out of the box:
+
+```bash
+devsandbox aider
+
+# With proxy monitoring
+devsandbox --proxy aider
+```
+
+### OpenCode
+
+[OpenCode](https://github.com/opencode-ai/opencode) is detected and supported:
+
+```bash
+devsandbox opencode
+```
+
 ### GitHub Copilot
 
 Works inside editors (Neovim, VS Code) running in the sandbox.
+
+### Other AI Tools
+
+Any CLI-based AI tool works in the sandbox. This includes Continue, Cline, and similar tools. If the tool runs as a CLI process, wrap it with `devsandbox`.
 
 ## Git
 
@@ -500,3 +531,13 @@ To make additional tools available:
 2. **System tools** - Tools in `/usr/bin`, `/usr/local/bin` are available
 
 3. **Project-local tools** - Place executables in your project directory
+
+## See Also
+
+- [Sandboxing](sandboxing.md) -- how isolation works, overlay filesystem for writable tools
+- [Sandboxing: Overlay Filesystem](sandboxing.md#overlay-filesystem) -- allow mise to install tools inside the sandbox
+- [Configuration: Tool Settings](configuration.md#tool-specific-configuration) -- git, mise, and Docker config options
+- [Use Cases: AI Coding Assistants](use-cases.md#ai-coding-assistants) -- workflows for Claude Code and Copilot
+- [Use Cases: Development Workflows](use-cases.md#development-workflows) -- language-specific examples
+
+[Back to docs index](README.md) | [Back to README](../README.md)
